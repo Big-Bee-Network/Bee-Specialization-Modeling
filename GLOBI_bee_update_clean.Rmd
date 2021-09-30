@@ -1,0 +1,63 @@
+---
+title:          Data Cleaning
+output:         html_document
+participants:   N. Bachelder, A. Chen, Z. Fang, M. Rapaport, S. Solomon
+date:           Feb 18, 2021
+source:         https://www.globalbioticinteractions.org/about
+---
+
+
+## Read data
+```{r}
+library(data.table)
+
+df <- fread( 'https://zenodo.org/record/4460654/files/interactions.csv.gz')
+```
+
+
+# Filtering
+```{r}
+# List of total seven of bee families
+b_families = c('Andrenidae','Apidae','Colletidae','Halictidae','Megachilidae','Melittidae','Stenotritidae')
+
+# Bee as target, Plant as source
+bee_source_df <- df %>% filter(sourceTaxonFamilyName %in% b_families, targetTaxonKingdomName == 'Plantae')
+
+# Plant as source, Bee as target
+plant_source_df = df %>% filter(sourceTaxonKingdomName == 'Plantae', targetTaxonFamilyName %in% b_families) 
+
+
+# Flip target/source for above df
+
+colnames(plant_source_df) <- as.character(lapply(colnames(plant_source_df), textclean::swap, pattern1 = 'source', pattern2 = 'target'))
+
+plant_source_df <- plant_source_df %>% rename(sourceCitation = targetCitation, sourceNamespace = targetNamespace, 
+                                              sourceArchiveURI = targetArchiveURI, sourceDOI = targetDOI,
+                                              sourceLastSeenAtUnixEpoch = targetLastSeenAtUnixEpoch)
+```
+
+
+
+
+## Combine
+```{r}
+# Combine without dropping duplicates
+# The filtering method guarantees two disjoint data frames
+interactions_dup = rbind(bee_source_df, plant_source_df) 
+
+# Combine and drop duplicates
+interactions = rbind(bee_source_df, plant_source_df) %>% unique()
+```
+
+## Result
+```{r}
+interactions
+```
+
+# Export to csv.gz file
+```{r}
+write.csv(interactions, "generated_data/interactions.csv")
+write.csv(interactions_dup, "generated_data/interactions_dup.csv")
+```
+
+

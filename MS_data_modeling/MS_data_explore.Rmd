@@ -1,0 +1,72 @@
+---
+title: "MS_data_clean"
+author: "Nick R. Bachelder"
+date: "10/1/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(lifecycle)
+library(rvest)
+library(dplyr)
+library(plotly)
+library(dplyr)
+library(data.table)
+library(stringr)
+library(readxl)
+
+MS_data <- readxl::read_xlsx('/Users/nickbachelder/Desktop/Fall 2021/Data for Bees/DATA_pollen-diet-breadth_list_09-26-21_ALR_seltmann-colab.xlsx', sheet = 2)
+
+
+globee <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/modeling_data/BeeCiteRaw') %>%
+  select(-west_specialist, -east_specialist, -cent_specialist, -specialist)
+
+fowler <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/modeling_data/BeeCiteRaw') %>%
+   mutate(interestBee = str_to_title(interestBee)) %>%
+  select(interestBee, west_specialist, east_specialist, cent_specialist, specialist)
+```
+
+```{r}
+MS_data_format <- MS_data %>% mutate(interestBee = str_to_title(paste(Genus, sub(".*? ", "", Species)))) %>% 
+  rename(degreeMS = 'Pollen host family #', specializationMS = 'Redefined pollen diet breadth') %>%
+  select(interestBee, degreeMS, specializationMS) %>%
+  filter(!is.na(degreeMS)) %>% arrange(interestBee)
+
+MS_data_format
+```
+
+
+
+```{r}
+globee_format <- globee %>% mutate(interestBee = str_to_title(interestBee)) %>% rename(degreeGLOBEE = degree) %>% 
+  select(interestBee, degreeGLOBEE) %>% unique() %>%
+  arrange(interestBee)
+
+globee_format
+```
+
+
+```{r}
+compare_df <- merge(globee_format, MS_data_format, by = c('interestBee'), all = T) 
+
+compare_df <- compare_df %>% merge(fowler %>% rename(specialistFOWLER = specialist) %>% 
+                                     select(interestBee, specialistFOWLER), by = c('interestBee'), all = T) %>% 
+  mutate(existsGLOBEE = ifelse(is.na(degreeGLOBEE), 0, 1), existsMS = ifelse(is.na(degreeMS), 0, 1), 
+         existsFOWLER = ifelse(is.na(specialistFOWLER), 0, 1),
+         existsALL = existsGLOBEE*existsMS*existsFOWLER)
+
+compare_df %>% filter(existsALL == 1)
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```

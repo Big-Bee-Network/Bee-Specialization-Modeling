@@ -1,0 +1,154 @@
+---
+title: "BeeModeling"
+author: "Nick R. Bachelder"
+date: "5/10/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(lifecycle)
+library(rvest)
+library(dplyr)
+library(plotly)
+library(dplyr)
+library(data.table)
+```
+
+```{r, echo = False}
+options(max.print=1000000)
+interactions_b <- read.csv('interactions_dup.csv') %>% select(-X)
+
+for (c in colnames(interactions_b)) {
+  interactions_b[[c]] <-  tolower(interactions_b[[c]])
+}
+
+for (c in colnames(interactions_b)) {
+  interactions_b[[c]] <-  tolower(interactions_b[[c]])
+}
+```
+
+```{r, echo = False}
+beeCiteW
+```
+
+
+Define beeCites with varying criteria
+
+```{r, fig.width=5,fig.height=2}
+beeCiteNoFilter <- interactions_b %>% select(sourceTaxonSpeciesName, targetTaxonFamilyName) %>% dplyr::rename(interestBee = sourceTaxonSpeciesName, interact = targetTaxonFamilyName) %>% group_by(interestBee, interact) %>% count() %>% ungroup() %>% filter(interestBee != "", interact != "")
+
+TotalCitations <- beeCiteNoFilter %>% group_by(interestBee) %>% summarise(n_Bee = sum(freq)) %>% ungroup()
+TotalCitations <- sum(TotalCitations$n_Bee)
+
+beeCiteNoFilter <- beeCiteNoFilter %>% group_by(interestBee) %>% mutate(interact= interact, n = freq, n_Bee = sum(n)) %>% ungroup()
+beeCiteNoFilter <- beeCiteNoFilter %>% summarise(interestBee = interestBee, interact= interact, n = n, n_Bee = n_Bee, BeeFreq = n_Bee / TotalCitations) %>% ungroup()
+
+beeIntDegree <- beeCiteNoFilter %>% select(interestBee, interact) %>% unique() %>% group_by(interestBee, interact) %>% count()
+beeIntDegree <- beeIntDegree %>% group_by(interestBee) %>% summarise(degree = sum(freq))
+
+beeIntDegreeC10 <- beeCiteNoFilter %>% select(interestBee, interact) %>% unique() %>% group_by(interestBee, interact) %>% count()
+beeIntDegreeC10$numcitations <- beeCiteNoFilter$n
+beeIntDegreeC10 <- beeIntDegreeC10 %>% filter(numcitations >= 10)
+beeIntDegreeC10 <- beeIntDegreeC10 %>% group_by(interestBee) %>% summarise(degree = sum(freq)) ## min of 10 citations to contribute to degree
+
+beeIntDegreeC5 <- beeCiteNoFilter %>% select(interestBee, interact) %>% unique() %>% group_by(interestBee, interact) %>% count()
+beeIntDegreeC5$numcitations <- beeCiteNoFilter$n
+beeIntDegreeC5 <- beeIntDegreeC5 %>% filter(numcitations >= 5)
+beeIntDegreeC5 <- beeIntDegreeC5 %>% group_by(interestBee) %>% summarise(degree = sum(freq)) ## min of 5 citations to contribute to degree
+
+beeIntDegreeW <- beeCiteNoFilter %>% select(interestBee, interact) %>% unique() %>% group_by(interestBee, interact) %>% count()
+beeIntDegreeW$numcitations <- beeCiteNoFilter$n
+beeIntDegreeW$n_Bee <- beeCiteNoFilter$n_Bee
+beeIntDegreeW$n <- (beeIntDegreeW$numcitations / beeIntDegreeW$n_Bee)^2
+beeIntDegreeW <- beeIntDegreeW %>% group_by(interestBee) %>% summarise(degree = sum(n)) ## weighted degree
+
+
+beeCite <-  merge(beeCiteNoFilter, beeIntDegree, by= "interestBee", type="inner") %>% filter(n > 5)
+
+beeCiteC10 <-  merge(beeCiteNoFilter, beeIntDegreeC10, by= "interestBee", type="inner") %>% filter(n > 5)
+
+beeCiteC5 <-  merge(beeCiteNoFilter, beeIntDegreeC5, by= "interestBee", type="inner") %>% filter(n > 5)
+beeCiteW <-  merge(beeCiteNoFilter, beeIntDegreeW, by= "interestBee", type="inner") %>% filter(n > 5)
+```
+
+## Include Fowler Data
+
+```{r}
+western_page <- read_html("https://jarrodfowler.com/pollen_specialist.html")
+eastern_page <- read_html("https://jarrodfowler.com/specialist_bees.html")
+central_page <- read_html("https://jarrodfowler.com/bees_pollen.html")
+
+
+western_table <- western_page %>% html_table(fill=TRUE)
+eastern_table<- eastern_page %>% html_table(fill=TRUE)
+central_table<- central_page %>% html_table(fill=TRUE)
+
+
+western_table <- as.data.frame(western_table) %>% dplyr::select(-Family..Subfamily..Tribe..Subtribe)
+eastern_table <- as.data.frame(eastern_table) %>% dplyr::select(-Family..Subfamily..Tribe..Subtribe)
+central_table <- as.data.frame(central_table) %>% dplyr::select(-Family..Subfamily..Tribe..Subtribe)
+
+western_table$interestBee <- tolower(gsub(" *\\(.*?\\) *", "", western_table$Genus..Subgenus..species))
+eastern_table$interestBee <- tolower(gsub(" *\\(.*?\\) *", "", eastern_table$Genus..Subgenus..species))
+central_table$interestBee <- tolower(gsub(" *\\(.*?\\) *", "", central_table$Genus..Subgenus..species))
+
+table <- rbind(western_table, eastern_table, central_table)
+table$interestBee <- tolower(gsub(" *\\(.*?\\) *", "", table$Genus..Subgenus..species))
+
+western_table$west_specialist <- 1
+western_test <- western_table %>% dplyr::select(interestBee, west_specialist) %>% unique()
+
+eastern_table$east_specialist <- 1
+eastern_test <- eastern_table %>% dplyr::select(interestBee, east_specialist) %>% unique()
+
+central_table$cent_specialist <- 1
+central_test <- central_table %>% dplyr::select(interestBee, cent_specialist) %>% unique()
+
+tablejoining <- merge(x = western_test, y = eastern_test, by = "interestBee", all = TRUE)
+table_test <- merge(x = tablejoining, y = central_test, by = "interestBee", all = TRUE)
+table_test[is.na(table_test)] <- 0
+```
+
+```{r}
+plotdf <- merge(beeCite, table_test, by = 'interestBee', all.x = TRUE)
+plotdf$specialist <- plotdf$west_specialist + plotdf$east_specialist + plotdf$cent_specialist
+plotdf$specialist <- as.integer(plotdf$specialist > 0)
+plotdf$specialist[is.na(plotdf$specialist)] <- 0
+
+fit = glm(specialist ~ n_Bee + degree, data = plotdf, family = 'binomial')
+
+ggplot(plotdf, aes(x= n_Bee, y= degree, color = as.factor(specialist))) +
+  geom_point() + xlab(paste('Number of Citations of Bee Genus')) + ylab(paste('Unique Plants Interacted With (Degree)')) + ggtitle(paste('Bee Interaction Diversity and Bee Citation Count')) + scale_x_continuous(limits = c(0, 200)) + scale_y_continuous(limits = c(0, 40))+ geom_jitter()+ scale_color_discrete(name = "Specialist") + geom_smooth()
+
+write.csv(plotdf, 'BeeCiteRaw')
+```
+```{r}
+plotdf <- merge(beeCiteC5, table_test, by = 'interestBee', all.x = TRUE)
+plotdf$specialist <- plotdf$west_specialist + plotdf$east_specialist + plotdf$cent_specialist
+plotdf$specialist <- as.integer(plotdf$specialist > 0)
+plotdf$specialist[is.na(plotdf$specialist)] <- 0
+
+ggplot(plotdf, aes(x= n_Bee, y= degree, color = as.factor(specialist)), text = paste("Bee:", interestBee)) +
+  geom_point() + xlab(paste('Number of Citations of Bee Genus')) + ylab(paste('Unique Plants Interacted With (Degree)')) + ggtitle(paste('Bee Interaction Diversity (Minimum 5 Citations) and Bee Citation Count')) + scale_x_continuous(limits = c(0, 200)) + scale_y_continuous(limits = c(0, 15))+ geom_jitter() + scale_color_discrete(name = "Specialist")+ geom_smooth(se = FALSE)
+
+write.csv(plotdf, 'BeeCiteC5')
+```
+
+```{r}
+plotdf <- merge(beeCiteW, table_test, by = 'interestBee', all.x = TRUE)
+plotdf$specialist <- plotdf$west_specialist + plotdf$east_specialist + plotdf$cent_specialist
+plotdf$specialist <- as.integer(plotdf$specialist > 0)
+plotdf$specialist[is.na(plotdf$specialist)] <- 0
+
+ggplot(plotdf, aes(x= n_Bee, y= degree, color = as.factor(specialist))) +
+  geom_point() + xlab(paste('Number of Citations of Bee Genus')) + ylab(paste('Function of Degree')) + ggtitle(paste('Function of Degree and Bee Citation Count')) + scale_x_continuous(limits = c(0, 200)) + scale_y_continuous(limits = c(0, 1)) + geom_smooth(se = FALSE)+ scale_color_discrete(name = "Specialist") 
+
+write.csv(plotdf, 'BeeCiteW')
+```
+
+
+
+
+

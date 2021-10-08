@@ -10,16 +10,24 @@ knitr::opts_chunk$set(echo = TRUE)
 library(lifecycle)
 library(rvest)
 library(dplyr)
+library(tidyr)
 library(plotly)
 library(dplyr)
 library(data.table)
 library(stringr)
 library(readxl)
+library(kableExtra)
 
 MS_data <- readxl::read_xlsx('/Users/nickbachelder/Desktop/Fall 2021/Data for Bees/DATA_pollen-diet-breadth_list_09-26-21_ALR_seltmann-colab.xlsx', sheet = 2)
 
 
 globee <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/modeling_data/BeeCiteRaw') %>%
+  select(-west_specialist, -east_specialist, -cent_specialist, -specialist)
+
+globee_5cut <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/modeling_data/BeeCiteC5') %>%
+  select(-west_specialist, -east_specialist, -cent_specialist, -specialist)
+
+globee_T <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/modeling_data/BeeCiteW') %>%
   select(-west_specialist, -east_specialist, -cent_specialist, -specialist)
 
 fowler <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/modeling_data/BeeCiteRaw') %>%
@@ -32,8 +40,6 @@ MS_data_format <- MS_data %>% mutate(interestBee = str_to_title(paste(Genus, sub
   rename(degreeMS = 'Pollen host family #', specializationMS = 'Redefined pollen diet breadth') %>%
   select(interestBee, degreeMS, specializationMS) %>%
   filter(!is.na(degreeMS)) %>% arrange(interestBee)
-
-MS_data_format
 ```
 
 
@@ -43,30 +49,106 @@ globee_format <- globee %>% mutate(interestBee = str_to_title(interestBee)) %>% 
   select(interestBee, degreeGLOBEE) %>% unique() %>%
   arrange(interestBee)
 
-globee_format
+globee_5cut_format <- globee_5cut %>% mutate(interestBee = str_to_title(interestBee)) %>% rename(degreeGLOBEE_C5 = degree) %>% 
+  select(interestBee, degreeGLOBEE_C5) %>% unique() %>%
+  arrange(interestBee)
+
+globee_T_format <- globee_T %>% mutate(interestBee = str_to_title(interestBee)) %>% rename(degreeGLOBEE_T = degree) %>% 
+  select(interestBee, degreeGLOBEE_T) %>% unique() %>%
+  arrange(interestBee)
 ```
 
 
 ```{r}
-compare_df <- merge(globee_format, MS_data_format, by = c('interestBee'), all = T) 
+compare_df <- merge(globee_format, MS_data_format, by = c('interestBee'), all = T)  
+compare_df <- merge(compare_df, globee_5cut_format, by = c('interestBee'), all = T) 
+compare_df <- merge(compare_df, globee_T_format, by = c('interestBee'), all = T) 
 
 compare_df <- compare_df %>% merge(fowler %>% rename(specialistFOWLER = specialist) %>% 
-                                     select(interestBee, specialistFOWLER), by = c('interestBee'), all = T) %>% 
+                                     select(interestBee, specialistFOWLER), by = c('interestBee'), all = T) %>% unique() %>%
   mutate(existsGLOBEE = ifelse(is.na(degreeGLOBEE), 0, 1), existsMS = ifelse(is.na(degreeMS), 0, 1), 
          existsFOWLER = ifelse(is.na(specialistFOWLER), 0, 1),
          existsALL = existsGLOBEE*existsMS*existsFOWLER)
-
-compare_df %>% filter(existsALL == 1)
 ```
+
+### Add individual citation cuts in addition to raw GLOBI
+### Figure out what we want to define as 'specialist' MS data
+
+```{r}
+only_globi <- compare_df %>% filter(existsGLOBEE == 1, existsMS == 0, existsFOWLER == 0) %>% nrow()
+globi_fowler <- compare_df %>% filter(existsGLOBEE == 1, existsMS == 0, existsFOWLER == 1) %>% nrow()
+globi_MS <- compare_df %>% filter(existsGLOBEE == 1, existsMS == 1, existsFOWLER == 0) %>% nrow()
+MS_fowler <- compare_df %>% filter(existsGLOBEE == 0, existsMS == 1, existsFOWLER == 1) %>% nrow()
+fowler_only <- compare_df %>% filter(existsGLOBEE == 0, existsMS == 0, existsFOWLER == 1) %>% nrow()
+MS_only <- compare_df %>% filter(existsGLOBEE == 0, existsMS == 1, existsFOWLER == 0) %>% nrow()
+all_sources <- compare_df %>% filter(existsALL == 1) %>% nrow()
+
+counts <- c(only_globi,fowler_only,MS_only, globi_MS, globi_fowler, MS_fowler, all_sources, nrow(compare_df))
+data_sources <- c('Only in GLOBI', 'Only in Fowler', 'Only in MS', 'GLOBI and MS', 'GLOBI and Fowler', 'MS and Fowler', 'All Sources', 'Total')
+
+data.frame(data_sources, counts) %>% mutate('Percent of Data' = counts / nrow(compare_df)) %>% 
+  rename('Data Source' = data_sources, 'Unique Genus Count' = counts) %>% kbl(caption = "Bee Data Sources Summary") %>%
+  kable_styling()
+```
+
+```{r}
+compare_df %>% filter(existsALL == 1) %>% group_by(specializationMS) %>% summarize('Mean GLOBI Degree'  = mean(degreeGLOBEE),
+                                                                                   'GLOBI Degree IQR' = paste('[', round(quantile(degreeGLOBEE, 0.25),
+                                                                                                                         2), 
+                                                                                                                  ',', round(quantile(degreeGLOBEE, 0.75), 2),
+                                                                                                            ']'),
+                                                                                   'Mean GLOBI C5 Degree' = mean(degreeGLOBEE_C5),
+                                                                                   'GLOBI C5 Degree IQR' = paste('[', round(quantile(degreeGLOBEE_C5, 0.25), 2),
+                                                                                                                  ',', round(quantile(degreeGLOBEE_C5, 0.75), 2),
+                                                                                                            ']'),
+                                                                                   'Mean GLOBI T Degree' = mean(degreeGLOBEE_T),
+                                                                                   'GLOBI T Degree IQR' = paste('[', round(quantile(degreeGLOBEE_T, 0.25), 2),
+                                                                                                                  ',', round(quantile(degreeGLOBEE_T, 0.75), 2),
+                                                                                                            ']'),
+                                                                                   'Mean MS Degree' = mean(degreeMS),
+                                                                                   'MS Degree IQR' = paste('[', round(quantile(degreeMS, 0.25), 2), 
+                                                                                                                  ',', round(quantile(degreeMS, 0.75), 2),
+                                                                                                            ']'),
+                                                                                   'Percent Fowler Specialist' = mean(specialistFOWLER)
+) %>% kbl(caption = 'Plant Family Degrees by MS Specialization') %>%
+  kable_styling()
+```
+
+```{r}
+# Bees fowler specialists but not MS specialists
+
+compare_df %>% filter(specialistFOWLER == 1, specializationMS  == 'Polylectic') %>% 
+  select(interestBee, specializationMS, specialistFOWLER, degreeGLOBEE_C5)
+```
+
+
+
+```{r}
+# Bees NOT fowler specialists but MS specialists
+
+compare_df %>% filter(specialistFOWLER == 0, specializationMS  != 'Polylectic') %>% 
+  select(interestBee, specializationMS, specialistFOWLER, degreeGLOBEE_C5)
+```
+
+## Plan: want to add pollen hosts so I can filter on pollen family. Discuss how to parse the authors out of appropriate MS column.
+
 
 ```{r}
 
 ```
 
-```{r}
 
-```
 
 ```{r}
 
 ```
+
+
+
+```{r}
+
+```
+
+
+
+

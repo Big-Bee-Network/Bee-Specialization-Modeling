@@ -37,11 +37,12 @@ fowler <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/mod
 
 ```{r}
 MS_data_format <- MS_data %>% mutate(interestBee = str_to_title(paste(Genus, sub(".*? ", "", Species)))) %>% 
-  rename(degreeMS = 'Pollen host family #', specializationMS = 'Redefined pollen diet breadth') %>%
-  select(interestBee, degreeMS, specializationMS) %>%
-  filter(!is.na(degreeMS)) %>% arrange(interestBee)
-```
+  rename(degreeMS = 'Pollen host family #', specializationMS = 'Redefined pollen diet breadth', pollenHosts = 'Pollen hosts') %>%
+  select(interestBee, pollenHosts, degreeMS, specializationMS, References) %>%
+  filter(!is.na(degreeMS)) %>% arrange(interestBee) %>% mutate(pollenHosts = str_to_title(gsub("[A-Za-z]*[^A-Za-z/, ]\\S*\\s*", "", pollenHosts)))
 
+MS_data_format
+```
 
 
 ```{r}
@@ -118,7 +119,7 @@ compare_df %>% filter(existsALL == 1) %>% group_by(specializationMS) %>% summari
 # Bees fowler specialists but not MS specialists
 
 compare_df %>% filter(specialistFOWLER == 1, specializationMS  == 'Polylectic') %>% 
-  select(interestBee, specializationMS, specialistFOWLER, degreeGLOBEE_C5)
+  select(interestBee, specializationMS, specialistFOWLER, degreeGLOBEE_C5, degreeGLOBEE)
 ```
 
 
@@ -127,11 +128,16 @@ compare_df %>% filter(specialistFOWLER == 1, specializationMS  == 'Polylectic') 
 # Bees NOT fowler specialists but MS specialists
 
 compare_df %>% filter(specialistFOWLER == 0, specializationMS  != 'Polylectic') %>% 
-  select(interestBee, specializationMS, specialistFOWLER, degreeGLOBEE_C5)
+  select(interestBee, specializationMS, specialistFOWLER, degreeGLOBEE_C5, degreeGLOBEE) %>% filter(degreeGLOBEE_C5 > 5)
 ```
 
-## Plan: want to add pollen hosts so I can filter on pollen family. Discuss how to parse the authors out of appropriate MS column.
+## Plan: want to add pollen hosts so I can filter on pollen family. Discuss how to parse the authors out of appropriate MS column. ## DONE
 
+## Cleaning up source and pollen columns (removin author abbreviation)   ### DONE
+
+## Create slides / tables explaining odd bees between datasets (ie. fowler specialist vs MS non-specialist and vis versa)
+
+## Check how many GLOBI bees were cut when filtering for fowler, add them back (update previously done tables)
 
 ```{r}
 

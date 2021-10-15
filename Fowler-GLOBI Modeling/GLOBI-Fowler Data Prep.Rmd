@@ -18,7 +18,7 @@ library(data.table)
 
 ```{r, echo = False}
 options(max.print=1000000)
-interactions_b <- read.csv('interactions_dup.csv') %>% select(-X)
+interactions_b <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/interactions_dup.csv') %>% select(-X)
 
 for (c in colnames(interactions_b)) {
   interactions_b[[c]] <-  tolower(interactions_b[[c]])
@@ -29,9 +29,7 @@ for (c in colnames(interactions_b)) {
 }
 ```
 
-```{r, echo = False}
-beeCiteW
-```
+
 
 
 Define beeCites with varying criteria
@@ -39,24 +37,24 @@ Define beeCites with varying criteria
 ```{r, fig.width=5,fig.height=2}
 beeCiteNoFilter <- interactions_b %>% select(sourceTaxonSpeciesName, targetTaxonFamilyName) %>% dplyr::rename(interestBee = sourceTaxonSpeciesName, interact = targetTaxonFamilyName) %>% group_by(interestBee, interact) %>% count() %>% ungroup() %>% filter(interestBee != "", interact != "")
 
-TotalCitations <- beeCiteNoFilter %>% group_by(interestBee) %>% summarise(n_Bee = sum(freq)) %>% ungroup()
+TotalCitations <- beeCiteNoFilter %>% group_by(interestBee) %>% summarise(n_Bee = sum(n)) %>% ungroup()
 TotalCitations <- sum(TotalCitations$n_Bee)
 
-beeCiteNoFilter <- beeCiteNoFilter %>% group_by(interestBee) %>% mutate(interact= interact, n = freq, n_Bee = sum(n)) %>% ungroup()
+beeCiteNoFilter <- beeCiteNoFilter %>% group_by(interestBee) %>% mutate(interact= interact, n = n, n_Bee = sum(n)) %>% ungroup()
 beeCiteNoFilter <- beeCiteNoFilter %>% summarise(interestBee = interestBee, interact= interact, n = n, n_Bee = n_Bee, BeeFreq = n_Bee / TotalCitations) %>% ungroup()
 
 beeIntDegree <- beeCiteNoFilter %>% select(interestBee, interact) %>% unique() %>% group_by(interestBee, interact) %>% count()
-beeIntDegree <- beeIntDegree %>% group_by(interestBee) %>% summarise(degree = sum(freq))
+beeIntDegree <- beeIntDegree %>% group_by(interestBee) %>% summarise(degree = sum(n))
 
 beeIntDegreeC10 <- beeCiteNoFilter %>% select(interestBee, interact) %>% unique() %>% group_by(interestBee, interact) %>% count()
 beeIntDegreeC10$numcitations <- beeCiteNoFilter$n
 beeIntDegreeC10 <- beeIntDegreeC10 %>% filter(numcitations >= 10)
-beeIntDegreeC10 <- beeIntDegreeC10 %>% group_by(interestBee) %>% summarise(degree = sum(freq)) ## min of 10 citations to contribute to degree
+beeIntDegreeC10 <- beeIntDegreeC10 %>% group_by(interestBee) %>% summarise(degree = sum(n)) ## min of 10 citations to contribute to degree
 
 beeIntDegreeC5 <- beeCiteNoFilter %>% select(interestBee, interact) %>% unique() %>% group_by(interestBee, interact) %>% count()
 beeIntDegreeC5$numcitations <- beeCiteNoFilter$n
 beeIntDegreeC5 <- beeIntDegreeC5 %>% filter(numcitations >= 5)
-beeIntDegreeC5 <- beeIntDegreeC5 %>% group_by(interestBee) %>% summarise(degree = sum(freq)) ## min of 5 citations to contribute to degree
+beeIntDegreeC5 <- beeIntDegreeC5 %>% group_by(interestBee) %>% summarise(degree = sum(n)) ## min of 5 citations to contribute to degree
 
 beeIntDegreeW <- beeCiteNoFilter %>% select(interestBee, interact) %>% unique() %>% group_by(interestBee, interact) %>% count()
 beeIntDegreeW$numcitations <- beeCiteNoFilter$n
@@ -65,12 +63,15 @@ beeIntDegreeW$n <- (beeIntDegreeW$numcitations / beeIntDegreeW$n_Bee)^2
 beeIntDegreeW <- beeIntDegreeW %>% group_by(interestBee) %>% summarise(degree = sum(n)) ## weighted degree
 
 
-beeCite <-  merge(beeCiteNoFilter, beeIntDegree, by= "interestBee", type="inner") %>% filter(n > 5)
+beeCite <-  merge(beeCiteNoFilter, beeIntDegree, by= "interestBee", type = 'inner') 
 
-beeCiteC10 <-  merge(beeCiteNoFilter, beeIntDegreeC10, by= "interestBee", type="inner") %>% filter(n > 5)
+beeCiteC10 <-  merge(beeCiteNoFilter, beeIntDegreeC10, by= "interestBee",  type = 'inner')
 
-beeCiteC5 <-  merge(beeCiteNoFilter, beeIntDegreeC5, by= "interestBee", type="inner") %>% filter(n > 5)
-beeCiteW <-  merge(beeCiteNoFilter, beeIntDegreeW, by= "interestBee", type="inner") %>% filter(n > 5)
+beeCiteC5 <-  merge(beeCiteNoFilter, beeIntDegreeC5, by= "interestBee",  type = 'inner') 
+
+beeCiteW <-  merge(beeCiteNoFilter, beeIntDegreeW, by= "interestBee",  type = 'inner')
+
+beeCiteW
 ```
 
 ## Include Fowler Data
@@ -109,6 +110,12 @@ central_test <- central_table %>% dplyr::select(interestBee, cent_specialist) %>
 tablejoining <- merge(x = western_test, y = eastern_test, by = "interestBee", all = TRUE)
 table_test <- merge(x = tablejoining, y = central_test, by = "interestBee", all = TRUE)
 table_test[is.na(table_test)] <- 0
+
+table_test$specialist <- table_test$west_specialist + table_test$east_specialist + table_test$cent_specialist
+table_test$specialist <- as.integer(table_test$specialist > 0)
+table_test$specialist[is.na(table_test$specialist)] <- 0
+
+write.csv(table_test, 'fowler')
 ```
 
 ```{r}
@@ -124,6 +131,7 @@ ggplot(plotdf, aes(x= n_Bee, y= degree, color = as.factor(specialist))) +
 
 write.csv(plotdf, 'BeeCiteRaw')
 ```
+
 ```{r}
 plotdf <- merge(beeCiteC5, table_test, by = 'interestBee', all.x = TRUE)
 plotdf$specialist <- plotdf$west_specialist + plotdf$east_specialist + plotdf$cent_specialist

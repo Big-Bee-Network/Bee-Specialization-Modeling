@@ -30,7 +30,7 @@ globee_5cut <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modelin
 globee_T <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/modeling_data/BeeCiteW') %>%
   select(-west_specialist, -east_specialist, -cent_specialist, -specialist)
 
-fowler <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/modeling_data/BeeCiteRaw') %>%
+fowler <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/Fowler-GLOBI Modeling/fowler') %>%
    mutate(interestBee = str_to_title(interestBee)) %>%
   select(interestBee, west_specialist, east_specialist, cent_specialist, specialist)
 ```
@@ -46,9 +46,13 @@ MS_data_format
 
 
 ```{r}
+pollenHostGLOBEE <- aggregate(interact~interestBee, globee_5cut, FUN=toString) %>% mutate(interestBee = str_to_title(interestBee)) %>% 
+  rename('pollenHostGLOBEE' = interact)
+## this is plant interactions for each bee genus according to globi
+
 globee_format <- globee %>% mutate(interestBee = str_to_title(interestBee)) %>% rename(degreeGLOBEE = degree) %>% 
   select(interestBee, degreeGLOBEE) %>% unique() %>%
-  arrange(interestBee)
+  arrange(interestBee) %>% merge(pollenHostGLOBEE, by = 'interestBee')
 
 globee_5cut_format <- globee_5cut %>% mutate(interestBee = str_to_title(interestBee)) %>% rename(degreeGLOBEE_C5 = degree) %>% 
   select(interestBee, degreeGLOBEE_C5) %>% unique() %>%
@@ -69,7 +73,14 @@ compare_df <- compare_df %>% merge(fowler %>% rename(specialistFOWLER = speciali
                                      select(interestBee, specialistFOWLER), by = c('interestBee'), all = T) %>% unique() %>%
   mutate(existsGLOBEE = ifelse(is.na(degreeGLOBEE), 0, 1), existsMS = ifelse(is.na(degreeMS), 0, 1), 
          existsFOWLER = ifelse(is.na(specialistFOWLER), 0, 1),
-         existsALL = existsGLOBEE*existsMS*existsFOWLER)
+         existsALL = existsGLOBEE*existsMS*existsFOWLER,
+         specialistFOWLER = ifelse(is.na(specialistFOWLER), 0 , specialistFOWLER),
+         pollenHostGLOBEE = str_to_title(pollenHostGLOBEE)) %>% rename(pollenHostsMS = pollenHosts,
+                                                                                              ReferencesMS = References) %>%
+  select(interestBee, specializationMS, degreeGLOBEE, degreeGLOBEE_C5, degreeGLOBEE_T, specialistFOWLER, 
+         existsGLOBEE, existsMS, existsFOWLER, existsALL, pollenHostsMS, pollenHostGLOBEE, ReferencesMS)
+ 
+compare_df %>% filter(existsALL == 1)
 ```
 
 ### Add individual citation cuts in addition to raw GLOBI
@@ -119,7 +130,7 @@ compare_df %>% filter(existsALL == 1) %>% group_by(specializationMS) %>% summari
 # Bees fowler specialists but not MS specialists
 
 compare_df %>% filter(specialistFOWLER == 1, specializationMS  == 'Polylectic') %>% 
-  select(interestBee, specializationMS, specialistFOWLER, degreeGLOBEE_C5, degreeGLOBEE)
+  select(interestBee, specializationMS, specialistFOWLER, degreeGLOBEE_C5, degreeGLOBEE, pollenHosts) %>% filter(degreeGLOBEE_C5 > 3)
 ```
 
 
@@ -135,19 +146,19 @@ compare_df %>% filter(specialistFOWLER == 0, specializationMS  != 'Polylectic') 
 
 ## Cleaning up source and pollen columns (removin author abbreviation)   ### DONE
 
-## Create slides / tables explaining odd bees between datasets (ie. fowler specialist vs MS non-specialist and vis versa)
+## Create slides / tables explaining odd bees between datasets (ie. fowler specialist vs MS non-specialist and vis versa) ## WIP
 
-## Check how many GLOBI bees were cut when filtering for fowler, add them back (update previously done tables)
+## Check how many GLOBI bees were cut when filtering for fowler, add them back (update previously done tables). ## DONE: Turns out that we didnt cut globi bees, but we instead cut FOWLER bees.
+
+### Also: Added the target pollen hosts from globi so we can compare to pollen hosts from MS
 
 ```{r}
-
+compare_df
 ```
 
 
 
-```{r}
 
-```
 
 
 

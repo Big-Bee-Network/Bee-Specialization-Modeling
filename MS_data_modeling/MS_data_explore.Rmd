@@ -17,50 +17,152 @@ library(data.table)
 library(stringr)
 library(readxl)
 library(kableExtra)
+library(rcol)
+library(plyr)
 
-MS_data <- readxl::read_xlsx('/Users/nickbachelder/Desktop/Fall 2021/Data for Bees/DATA_pollen-diet-breadth_list_09-26-21_ALR_seltmann-colab.xlsx', sheet = 2)
+MS_data <- readxl::read_xlsx('/Users/nickbachelder/Desktop/Fall 2021/Data for Bees/DATA_pollen-diet-breadth_list_10-26-21_ALR seltmann-colab.xlsx', sheet = 2)
 
 
 globee <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/modeling_data/BeeCiteRaw') %>%
-  select(-west_specialist, -east_specialist, -cent_specialist, -specialist)
+  dplyr::select(-west_specialist, -east_specialist, -cent_specialist, -specialist)
 
 globee_5cut <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/modeling_data/BeeCiteC5') %>%
-  select(-west_specialist, -east_specialist, -cent_specialist, -specialist)
+  dplyr::select(-west_specialist, -east_specialist, -cent_specialist, -specialist)
 
 globee_T <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/modeling_data/BeeCiteW') %>%
-  select(-west_specialist, -east_specialist, -cent_specialist, -specialist)
+  dplyr::select(-west_specialist, -east_specialist, -cent_specialist, -specialist)
 
 fowler <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/Fowler-GLOBI Modeling/fowler') %>%
    mutate(interestBee = str_to_title(interestBee)) %>%
-  select(interestBee, west_specialist, east_specialist, cent_specialist, specialist)
+  dplyr::select(interestBee, west_specialist, east_specialist, cent_specialist, specialist) %>% 
+  filter(grepl('^\\w+\\s\\w+$', interestBee))
 ```
 
 ```{r}
 MS_data_format <- MS_data %>% mutate(interestBee = str_to_title(paste(Genus, sub(".*? ", "", Species)))) %>% 
-  rename(degreeMS = 'Pollen host family #', specializationMS = 'Redefined pollen diet breadth', pollenHosts = 'Pollen hosts') %>%
-  select(interestBee, pollenHosts, degreeMS, specializationMS, References) %>%
-  filter(!is.na(degreeMS)) %>% arrange(interestBee) %>% mutate(pollenHosts = str_to_title(gsub("[A-Za-z]*[^A-Za-z/, ]\\S*\\s*", "", pollenHosts)))
+  dplyr::rename(degreeMS = 'Pollen host family #', specializationMS = 'Redefined pollen diet breadth', pollenHosts = 'Pollen hosts') %>%
+  dplyr::select(interestBee, pollenHosts, degreeMS, specializationMS, References) %>%
+  filter(!is.na(specializationMS)) %>% arrange(interestBee) %>% 
+  filter(grepl('^\\w+\\s\\w+$', interestBee))
 
-MS_data_format
+MS_data_format %>% filter(!(is.na(specializationMS)), is.na(pollenHosts)) ### there
+```
+
+
+### create family level column by pulling
+
+```{r}
+cp_nu_search(q='Sesamum', status = "accepted")$result$classification
+```
+
+
+
+```{r}
+MS_data_format$pollenHosts <-  gsub("\\?.*", "", MS_data_format$pollenHosts)
+MS_data_format$pollenHosts <-  gsub("\\..*", "", MS_data_format$pollenHosts)
+ 
+ms_pollen_hosts = na.omit(unique(
+  
+  sub("\\/.*", "", word(unlist(str_split(unique(MS_data_format$pollenHosts), pattern = ', ')), 1))
+  
+  ))
+
+## pulls all unique maximum level taxonomic names from MS pollen hosts
+ms_pollen_hosts <- ms_pollen_hosts[!(ms_pollen_hosts == '')]
+
+ms_pollen_hosts
 ```
 
 
 ```{r}
+library(rcol)
+library(pbapply)
+
+find_family <- function(name) {
+  try <- try(cp_nu_search(q=name, status = "accepted"), silent=TRUE)
+  if ("try-error" %in% class(try)) {
+    label <- 'Unknown'
+  }
+  try <- try(str_to_title(tolower(
+    (rbind( data.frame(try$result$classification[1]),
+        data.frame(try$result$classification[2]),
+       data.frame(try$result$classification[3])) %>% filter(rank == 'family'))[1,]$label
+    )), silent=TRUE)
+  if ("try-error" %in% class(try)) {
+    label <- 'Unknown'
+  }
+  else {
+    label <- try
+  }
+  return(label)
+}
+
+familys <- pblapply(ms_pollen_hosts, find_family)
+```
+
+
+```{r}
+familys <- unlist(familys)
+family_key <- data.frame(cbind(ms_pollen_hosts, familys)) %>% `colnames<-`(c('max_taxons', 'pollen_host_familys')) 
+
+family_key
+```
+
+## Make the below two entries have 0 rows with Avery's help
+```{r}
+family_key %>% filter(is.na(pollen_host_familys))
+```
+
+```{r}
+family_key %>% filter(pollen_host_familys == 'Unknown', grepl( ',', max_taxons, fixed = TRUE))
+```
+
+
+
+## make sure the below has no family name synonyms. Take out the unknownand NA values until we fix them with avery.
+
+```{r}
+pollen_family_MS <- MS_data_format %>% select(interestBee, pollenHosts) %>% separate_rows(pollenHosts, sep=', ') %>% mutate(max_taxons = word(pollenHosts, 1)  ) %>% left_join(family_key, by = 'max_taxons') %>% select(interestBee, pollen_host_familys) %>% 
+  group_by(interestBee) %>% 
+  dplyr::summarise(pollen_host_familys = paste(unique(as.vector(pollen_host_familys)), collapse = ', '))
+
+
+
+MS_data_format <- MS_data_format %>% left_join(pollen_family_MS, by = 'interestBee') 
+``` 
+
+```{r}
+avery_send <- MS_data_format %>% select(interestBee, pollenHosts, pollen_host_familys) %>% mutate(ifelse(pollen_host_familys == 'NA', NA, pollen_host_familys))
+
+write.csv(avery_send, "/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/Family_Level_Transform.csv")
+
+avery_send
+``` 
+
+
+### Clean GLOBEE data
+
+
+```{r}
 pollenHostGLOBEE <- aggregate(interact~interestBee, globee_5cut, FUN=toString) %>% mutate(interestBee = str_to_title(interestBee)) %>% 
-  rename('pollenHostGLOBEE' = interact)
+  dplyr::rename('pollenHostGLOBEE' = interact) %>% 
+  filter(grepl('^\\w+\\s\\w+$', interestBee))
 ## this is plant interactions for each bee genus according to globi
 
-globee_format <- globee %>% mutate(interestBee = str_to_title(interestBee)) %>% rename(degreeGLOBEE = degree) %>% 
-  select(interestBee, degreeGLOBEE) %>% unique() %>%
-  arrange(interestBee) %>% merge(pollenHostGLOBEE, by = 'interestBee')
+globee_format <- globee %>% mutate(interestBee = str_to_title(interestBee)) %>% dplyr::rename(degreeGLOBEE = degree) %>% 
+  dplyr::select(interestBee, degreeGLOBEE, n_Bee) %>% unique() %>%
+  arrange(interestBee) %>% merge(pollenHostGLOBEE, by = 'interestBee') %>% 
+  filter(grepl('^\\w+\\s\\w+$', interestBee))
 
-globee_5cut_format <- globee_5cut %>% mutate(interestBee = str_to_title(interestBee)) %>% rename(degreeGLOBEE_C5 = degree) %>% 
-  select(interestBee, degreeGLOBEE_C5) %>% unique() %>%
-  arrange(interestBee)
+globee_5cut_format <- globee_5cut %>% mutate(interestBee = str_to_title(interestBee)) %>% dplyr::rename(degreeGLOBEE_C5 = degree) %>% 
+  dplyr::select(interestBee, degreeGLOBEE_C5) %>% unique() %>%
+  arrange(interestBee)%>% 
+  filter(grepl('^\\w+\\s\\w+$', interestBee))
 
-globee_T_format <- globee_T %>% mutate(interestBee = str_to_title(interestBee)) %>% rename(degreeGLOBEE_T = degree) %>% 
-  select(interestBee, degreeGLOBEE_T) %>% unique() %>%
-  arrange(interestBee)
+globee_T_format <- globee_T %>% mutate(interestBee = str_to_title(interestBee)) %>% dplyr::rename(degreeGLOBEE_T = degree) %>% 
+  dplyr::select(interestBee, degreeGLOBEE_T) %>% unique() %>%
+  arrange(interestBee)%>% 
+  filter(grepl('^\\w+\\s\\w+$', interestBee))
 ```
 
 
@@ -69,18 +171,21 @@ compare_df <- merge(globee_format, MS_data_format, by = c('interestBee'), all = 
 compare_df <- merge(compare_df, globee_5cut_format, by = c('interestBee'), all = T) 
 compare_df <- merge(compare_df, globee_T_format, by = c('interestBee'), all = T) 
 
-compare_df <- compare_df %>% merge(fowler %>% rename(specialistFOWLER = specialist) %>% 
-                                     select(interestBee, specialistFOWLER), by = c('interestBee'), all = T) %>% unique() %>%
-  mutate(existsGLOBEE = ifelse(is.na(degreeGLOBEE), 0, 1), existsMS = ifelse(is.na(degreeMS), 0, 1), 
+compare_df <- compare_df %>% merge(fowler %>% dplyr::rename(specialistFOWLER = specialist) %>% 
+                                     dplyr::select(interestBee, specialistFOWLER), by = c('interestBee'), all = T) %>% unique() %>%
+  mutate(existsGLOBEE = ifelse(is.na(degreeGLOBEE), 0, 1), existsMS = ifelse(is.na(specializationMS), 0, 1), 
          existsFOWLER = ifelse(is.na(specialistFOWLER), 0, 1),
          existsALL = existsGLOBEE*existsMS,
          pollenHostGLOBEE = str_to_title(pollenHostGLOBEE)) %>%
   mutate(specialistFOWLER = ifelse(is.na(specialistFOWLER), 0 , specialistFOWLER))%>% 
-  rename(pollenHostsMS = pollenHosts,ReferencesMS = References) %>%
-  select(interestBee, specializationMS, degreeGLOBEE, degreeGLOBEE_C5, degreeGLOBEE_T, specialistFOWLER, 
-         existsGLOBEE, existsMS, existsFOWLER, existsALL, pollenHostsMS, pollenHostGLOBEE, ReferencesMS, degreeMS)
- 
-compare_df %>% filter(existsALL == 0)
+  dplyr::rename(pollenHostsMS = pollenHosts ,pollenHostsFamilysMS = pollen_host_familys,ReferencesMS = References, nBeeGLOBEE = n_Bee) %>%
+  dplyr::select(interestBee, specializationMS, nBeeGLOBEE, degreeGLOBEE, degreeGLOBEE_C5, degreeGLOBEE_T, specialistFOWLER, 
+         existsGLOBEE, existsMS, existsFOWLER, existsALL, pollenHostsMS, pollenHostsFamilysMS, pollenHostGLOBEE, ReferencesMS, degreeMS) %>%
+  rowwise() %>%
+  dplyr::mutate(pollenHostsFamilysMS = ifelse(pollenHostsFamilysMS == 'NA', NA, pollenHostsFamilysMS) ) %>%
+  dplyr::mutate(FamilyDegreeMS = ifelse(!is.na(pollenHostsFamilysMS), length(strsplit(pollenHostsFamilysMS, split = ', ')[[1]]), 0  ) )
+
+compare_df
 ```
 
 ### Add individual citation cuts in addition to raw GLOBI
@@ -99,12 +204,12 @@ counts <- c(only_globi,fowler_only,MS_only, globi_MS, globi_fowler, MS_fowler, a
 data_sources <- c('Only in GLOBI', 'Only in Fowler', 'Only in MS', 'GLOBI and MS', 'GLOBI and Fowler', 'MS and Fowler', 'All Sources', 'Total')
 
 data.frame(data_sources, counts) %>% mutate('Percent of Data' = counts / nrow(compare_df)) %>% 
-  rename('Data Source' = data_sources, 'Unique Genus Count' = counts) %>% kbl(caption = "Bee Data Sources Summary") %>%
+  dplyr::rename('Data Source' = data_sources, 'Unique Species Count' = counts) %>% kbl(caption = "Bee Data Sources Summary") %>%
   kable_styling()
 ```
 
 ```{r}
-compare_df %>% filter(existsALL == 1) %>% group_by(specializationMS) %>% summarize('Mean GLOBI Degree'  = mean(degreeGLOBEE),
+compare_df %>% filter(existsALL == 1) %>% group_by(specializationMS) %>% dplyr::summarize('Mean GLOBI Degree'  = mean(degreeGLOBEE),
                                                                                    'GLOBI Degree IQR' = paste('[', round(quantile(degreeGLOBEE, 0.25),
                                                                                                                          2), 
                                                                                                                   ',', round(quantile(degreeGLOBEE, 0.75), 2),
@@ -125,8 +230,12 @@ compare_df %>% filter(existsALL == 1) %>% group_by(specializationMS) %>% summari
 ```{r}
 # Bees fowler specialists but not MS specialists
 
-compare_df %>% filter(specialistFOWLER == 1, specializationMS  == 'Polylectic') %>% 
-  select(interestBee, specializationMS, specialistFOWLER, degreeGLOBEE_C5, degreeGLOBEE, pollenHostsMS, pollenHostGLOBEE, ReferencesMS) %>% filter(degreeGLOBEE < 3)
+odd_generalists <- compare_df %>% filter(specialistFOWLER == 1, specializationMS  == 'Polylectic') %>% 
+  dplyr::select(interestBee, specializationMS, specialistFOWLER, degreeGLOBEE_C5, degreeGLOBEE, pollenHostsFamilysMS, pollenHostsMS, pollenHostGLOBEE, ReferencesMS) %>% filter(degreeGLOBEE_C5 == 1)
+
+odd_generalists
+
+write.csv(odd_generalists, '/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/modeling_data/odd_polylectic.csv')
 ```
 
 
@@ -134,34 +243,189 @@ compare_df %>% filter(specialistFOWLER == 1, specializationMS  == 'Polylectic') 
 ```{r}
 # Bees NOT fowler specialists but MS specialists
 
-compare_df %>% filter(specialistFOWLER == 0, specializationMS  != 'Polylectic') %>% 
-  select(interestBee, specializationMS, specialistFOWLER, degreeGLOBEE_C5, degreeGLOBEE, pollenHostsMS, pollenHostGLOBEE, ReferencesMS) %>% filter(degreeGLOBEE_C5 > 5)
+odd_specialists <- compare_df %>% filter(specialistFOWLER == 0, specializationMS  != 'Polylectic') %>% 
+  dplyr::select(interestBee, specializationMS, specialistFOWLER, degreeGLOBEE_C5, degreeGLOBEE, pollenHostsMS, pollenHostsFamilysMS, pollenHostGLOBEE, ReferencesMS) %>% filter(degreeGLOBEE_C5 > 3)
+
+odd_specialists
+
+write.csv(odd_specialists, '/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/modeling_data/odd_specialists.csv')
 ```
 
-## Plan: want to add pollen hosts so I can filter on pollen family. Discuss how to parse the authors out of appropriate MS column. ## DONE
+
+```{r}
+# Bees NOT in MS
+
+missing_MS <- compare_df %>% filter(existsMS == 0)
+
+missing_MS
+
+write.csv(missing_MS, '/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/modeling_data/missing_MS.csv')
+```
+
+## Plan: want to add pollen hosts from MS data so I can filter on pollen family. Discuss how to parse the authors out of appropriate MS column. ## DONE
+NEED TO DISCUSS: The MS pollen hosts are a mix of genus and families, randomly. Maybe we can ask MS to seperate these into two columns, or just simply make a family level column only.
 
 ## Cleaning up source and pollen columns (removin author abbreviation)   ### DONE
 
 ## Create slides / tables explaining odd bees between datasets (ie. fowler specialist vs MS non-specialist and vis versa) ## WIP
 
-## Check how many GLOBI bees were cut when filtering for fowler, add them back (update previously done tables). ## DONE: Turns out that we didnt cut globi bees, but we instead cut FOWLER bees.
+## Check how many GLOBI bees were cut when filtering for fowler, add them back (update previously done tables). ## DONE
+DISCUSS: Turns out that we didnt cut globi bees, but we instead cut FOWLER bees. I unfiltered the fowler bees and it fixed the ratios. Now we can actually discuss data proportions
 
 ### Also: Added the target pollen hosts from globi so we can compare to pollen hosts from MS
+This way we can directly compare the MS pollen hosts to the GLOBI pollen hosts. THe only issue is the above problem with a mix of taxonomic levels with the MS data
+
+
+
+---------------
+
+For next week:
+
+Check out the web scraper to fix MS names to family level
+
+Pull out data that is only in GLOBI and/or Fowler, use as group to check for old names as reason.
+
+
+--------------
+
+
+## Modeling below
+
+
+
+# (1) Model same as old, except use conclusions from MS not fowler
 
 
 ```{r}
+modeling_df <- compare_df %>% filter(existsMS == 1, existsGLOBEE == 1) %>% mutate(specialist = ifelse(specializationMS == 'Polylectic', 1, 0 )) %>% dplyr::select(interestBee, nBeeGLOBEE, degreeGLOBEE, degreeGLOBEE_C5, degreeGLOBEE_T, FamilyDegreeMS, specialist)
 
+modeling_df
+```
+
+
+
+```{r}
+calc_error_rate = function(predicted.value, true.value){
+  return(mean(true.value!=predicted.value))
+}
+records = matrix(NA, nrow=3, ncol=2)
+colnames(records) = c("train.error","test.error")
+rownames(records) = c("tree","logistic","lasso")
+
+nfold <- 10
+
+
+n <- nrow(modeling_df)
+
+in.trn <- sample.int(n, 0.8*n) 
+trn.cl <- modeling_df[ in.trn,]
+tst.cl <- modeling_df[-in.trn,]
+
+folds <- sample(cut(1:nrow(trn.cl), breaks=nfold, labels=FALSE))
+```
+
+
+
+```{r}
+library(tree)
+library(maptree)
+
+tree <- tree(as.factor(specialist) ~ degreeGLOBEE_T + nBeeGLOBEE, data = trn.cl)
+cv <- cv.tree(tree, rand = folds, FUN = prune.misclass, K = 10)
+
+best.size.cv = min(cv$size[cv$dev == min(cv$dev)])
+
+tree.pruned <- prune.misclass(tree, best= best.size.cv)
+
+train_pred_tree <- predict(tree.pruned, trn.cl %>% select(degreeGLOBEE_T, nBeeGLOBEE), type = 'class')
+test_pred_tree <- predict(tree.pruned, tst.cl %>% select(degreeGLOBEE_T, nBeeGLOBEE), type = 'class')
+
+train_err <- calc_error_rate(train_pred_tree, trn.cl$specialist)
+test_err <- calc_error_rate(test_pred_tree, tst.cl$specialist)
+
+1 - train_err
+1 - test_err
+```
+
+```{r}
+glmfit <- glm(as.factor(specialist) ~ degreeGLOBEE_T + nBeeGLOBEE, data = trn.cl, family = 'binomial')
+predicttrain_log = predict(glmfit, trn.cl %>% select(degreeGLOBEE_T, nBeeGLOBEE), type="response")
+predicttest_log = predict(glmfit, tst.cl %>% select(degreeGLOBEE_T, nBeeGLOBEE), type="response")
+
+predicttrain_log = ifelse(predicttrain_log > 0.5, 1, 0)
+predicttest_log = ifelse(predicttest_log > 0.5, 1, 0)
+
+trainerror <- calc_error_rate(predicttrain_log, trn.cl$specialist)
+valerror <- calc_error_rate(predicttest_log, tst.cl$specialist)
+
+1 - trainerror
+1 - valerror
 ```
 
 
 ```{r}
+library(randomForest) 
 
+rf_fit <-  randomForest(as.factor(specialist) ~ degreeGLOBEE_T + nBeeGLOBEE, data = trn.cl, importance=TRUE)
+
+predict_train <- predict(rf_fit, newdata = trn.cl %>% select(degreeGLOBEE_T, nBeeGLOBEE), type="class")
+predict_test <- predict(rf_fit, newdata = tst.cl %>% select(degreeGLOBEE_T, nBeeGLOBEE), type="class")
+
+train_err <- calc_error_rate(as.character(predict_train), trn.cl$specialist)
+
+test_err <- calc_error_rate(as.character(predict_test), tst.cl$specialist)
+
+1 - train_err
+1 - test_err
 ```
-
+# Try multi feature with best model:
 
 ```{r}
+rf_fit <-  randomForest(as.factor(specialist) ~ ., data = trn.cl, importance=TRUE)
 
+predict_train <- predict(rf_fit, newdata = trn.cl %>% select(-specialist), type="class")
+predict_test <- predict(rf_fit, newdata = tst.cl %>% select(-specialist), type="class")
+
+train_err <- calc_error_rate(as.character(predict_train), trn.cl$specialist)
+
+test_err <- calc_error_rate(as.character(predict_test), tst.cl$specialist)
+
+1 - train_err
+1 - test_err
 ```
+
+
+
+# Begin Baysian Approaches
+
+```{r}
+modeling_df
+```
+
+```{r}
+compare_df %>% filter(interestBee == 'Agapostemon Angelicus') 
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

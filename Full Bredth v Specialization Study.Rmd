@@ -1,0 +1,164 @@
+---
+title: "Full Bredth v Specialization Study"
+author: "Nick R. Bachelder"
+date: "4/15/2022"
+output: html_document
+---
+
+## issue fixes: 
+
+# Assume non-rare bees are 'not -rare' DONE
+# Remove cases where bee rarity changes across area # DONE
+# Change common catagory to 'not-rare' (assumption: fowler is exhustive) # DONE
+# location can be tossed due to data limitation, use broad scale east, west, central together.
+# Do it at the genus level for plants
+
+
+
+### aceae for families if we clean out family names for plants
+### use tp for source 
+
+
+### Question: For and common rare bees in the easter, western, and central united states respectively, is the specialization indicative of limited diet bredth?
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+compare_df <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/modeling_data/compare_df.csv') %>% dplyr::select(-X)
+
+compare_df %>% filter(degreeMS > degreeMSGenus)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+### lets experiment with all bees at FAMILY LEVEL
+
+
+
+
+```{r}
+monolectic <- compare_df %>% filter(specializationMS %in% c('Monolectic', 'Oligolectic'))
+polylectic <- compare_df %>% filter(specializationMS == 'Polylectic')
+
+monolectic
+polylectic
+```
+
+### Note: correlation for polylectic
+
+```{r}
+cor.test(polylectic$degreeMS, polylectic$degreeGLOBEE, method=c("pearson"))
+```
+
+```{r}
+cor.test(polylectic$degreeMS, polylectic$degreeGLOBEE_C5, method=c("pearson"))
+```
+
+
+
+
+## do at genus level
+
+
+
+```{r}
+
+```
+
+
+
+
+```{r}
+
+```
+
+
+
+```
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+### lets experiment with all bees at GENUS LEVEL
+
+```{r}
+compare_df
+```
+
+
+
+
+### Note: monolectic all have degreeMS = 1, so cant measure correlation. polylectic all similar
+
+```{r}
+cor.test(polylectic$degreeMS, polylectic$degreeGLOBEE, method=c("pearson"))
+```
+
+```{r}
+cor.test(monolectic$degreeMS, monolectic$degreeGLOBEE_C5, method=c("pearson"))
+cor.test(polylectic$degreeMS, polylectic$degreeGLOBEE_C5, method=c("pearson"))
+```
+
+
+
+
+### Note: No correlation between MSdegree and GLOBEE_T degree for  monolectic, but one for polylectic
+
+
+
+```{r}
+cor.test(monolectic$degreeMS, monolectic$degreeGLOBEE_T, method=c("pearson"))
+cor.test(polylectic$degreeMS, polylectic$degreeGLOBEE_T, method=c("pearson"))
+```
+
+
+
+
+```{r}
+monolectic %>% ggplot(aes(x = degreeMS, y = degreeGLOBEE_T)) + geom_point()
+```
+
+
+
+```{r}
+polylectic %>% ggplot(aes(x = degreeMS, y = degreeGLOBEE_T)) + geom_point()
+```
+
+
+
+
+
+
+

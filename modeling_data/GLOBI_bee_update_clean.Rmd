@@ -31,7 +31,7 @@ plant_source_df = df %>% filter(sourceTaxonKingdomName == 'Plantae', targetTaxon
 
 colnames(plant_source_df) <- as.character(lapply(colnames(plant_source_df), textclean::swap, pattern1 = 'source', pattern2 = 'target'))
 
-plant_source_df <- plant_source_df %>% rename(sourceCitation = targetCitation, sourceNamespace = targetNamespace, 
+plant_source_df <- plant_source_df %>% dplyr::rename(sourceCitation = targetCitation, sourceNamespace = targetNamespace, 
                                               sourceArchiveURI = targetArchiveURI, sourceDOI = targetDOI,
                                               sourceLastSeenAtUnixEpoch = targetLastSeenAtUnixEpoch)
 ```
@@ -49,15 +49,10 @@ interactions_dup = rbind(bee_source_df, plant_source_df)
 interactions = rbind(bee_source_df, plant_source_df) %>% unique()
 ```
 
-## Result
-```{r}
-interactions
-```
 
 # Export to csv file
 ```{r}
-## write.csv(interactions, "interactions.csv")
-## write.csv(interactions_dup, "interactions_dup.csv")
+write.csv(interactions_dup, "interactions_dup.csv")
 ```
 
 

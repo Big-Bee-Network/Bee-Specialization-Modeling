@@ -52,7 +52,7 @@ interactions = rbind(bee_source_df, plant_source_df) %>% unique()
 
 # Export to csv file
 ```{r}
-write.csv(interactions_dup, "interactions_dup.csv")
+readr::write_csv(interactions_dup, "interactions_dup.csv")
 ```
 
 

@@ -9,7 +9,7 @@ output: html_document
 
 # Assume non-rare bees are 'not -rare' DONE
 # Remove cases where bee rarity changes across area # DONE
-# Change common catagory to 'not-rare' (assumption: fowler is exhustive) # DONE
+# Change common catagory to 'not-rare' (assumption: fowler is exhaustive) # DONE
 # location can be tossed due to data limitation, use broad scale east, west, central together.
 # Do it at the genus level for plants
 
@@ -24,30 +24,13 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
 library(ggplot2)
-compare_df <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/modeling_data/compare_df.csv') %>% dplyr::select(-X)
+compare_df <- read.csv('modeling_data/compare_df.csv') 
 
 compare_df %>% filter(degreeMS > degreeMSGenus)
 ```
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ### lets experiment with all bees at FAMILY LEVEL
-
-
-
 
 ```{r}
 monolectic <- compare_df %>% filter(specializationMS %in% c('Monolectic', 'Oligolectic'))

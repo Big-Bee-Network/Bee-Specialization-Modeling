@@ -7,19 +7,23 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/Users/colleen/Dropbox/Fall_2014/ucsb/Bee-Specialization-Modeling/")
+knitr::opts_knit$set(error=T)
+
 
 library(lifecycle)
 library(rvest)
 library(dplyr)
 library(plotly)
-library(dplyr)
+library(tidyverse)
 library(data.table)
+
 
 ```
 
 ```{r, echo = False}
 options(max.print=1000000)
-interactions_b <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/interactions_dup.csv') %>% dplyr::select(-X)
+interactions_b <- read.csv('modeling_data/interactions_dup.csv')
 
 for (c in colnames(interactions_b)) {
   interactions_b[[c]] <-  tolower(interactions_b[[c]])
@@ -39,7 +43,8 @@ interactions_b[1:5,]
 Define beeCites with varying criteria
 
 ```{r, fig.width=5,fig.height=2}
-beeCiteNoFilter <- interactions_b %>% dplyr::select(sourceTaxonSpeciesName,targetTaxonFamilyName) %>% 
+beeCiteNoFilter <- interactions_b %>% 
+  dplyr::select(sourceTaxonSpeciesName,targetTaxonFamilyName) %>% 
   dplyr::rename(interestBee = sourceTaxonSpeciesName, interact = targetTaxonFamilyName) %>% dplyr::group_by(interestBee, interact) %>% dplyr::count() %>% ungroup() %>% 
   filter(interestBee != "", interact != "")
 
@@ -183,7 +188,7 @@ table_test$specialist <- table_test$west_specialist + table_test$east_specialist
 table_test$specialist <- as.integer(table_test$specialist > 0)
 table_test$specialist[is.na(table_test$specialist)] <- 0
 
-write.csv(table_test, 'fowler')
+write_csv(table_test, 'modeling_data/fowler')
 ```
 
 ```{r}
@@ -192,7 +197,7 @@ plotdf$specialist <- plotdf$west_specialist + plotdf$east_specialist + plotdf$ce
 plotdf$specialist <- as.integer(plotdf$specialist > 0)
 plotdf$specialist[is.na(plotdf$specialist)] <- 0
 
-write.csv(plotdf, 'BeeCiteRaw')
+write_csv(plotdf, 'modeling_data/BeeCiteRaw')
 ```
 
 ```{r}
@@ -201,7 +206,7 @@ plotdf$specialist <- plotdf$west_specialist + plotdf$east_specialist + plotdf$ce
 plotdf$specialist <- as.integer(plotdf$specialist > 0)
 plotdf$specialist[is.na(plotdf$specialist)] <- 0
 
-write.csv(plotdf, 'BeeCiteC5')
+write_csv(plotdf, 'modeling_data/BeeCiteC5')
 ```
 
 ```{r}
@@ -210,7 +215,7 @@ plotdf$specialist <- plotdf$west_specialist + plotdf$east_specialist + plotdf$ce
 plotdf$specialist <- as.integer(plotdf$specialist > 0)
 plotdf$specialist[is.na(plotdf$specialist)] <- 0
 
-write.csv(plotdf, 'BeeCiteW')
+write_csv(plotdf, 'modeling_data/BeeCiteW')
 ```
 
 ```{r}
@@ -219,7 +224,7 @@ plotdf$specialist <- plotdf$west_specialist + plotdf$east_specialist + plotdf$ce
 plotdf$specialist <- as.integer(plotdf$specialist > 0)
 plotdf$specialist[is.na(plotdf$specialist)] <- 0
 
-write.csv(plotdf, 'BeeCiteRawGenus')
+write_csv(plotdf, 'modeling_data/BeeCiteRawGenus')
 ```
 
 ```{r}
@@ -228,7 +233,7 @@ plotdf$specialist <- plotdf$west_specialist + plotdf$east_specialist + plotdf$ce
 plotdf$specialist <- as.integer(plotdf$specialist > 0)
 plotdf$specialist[is.na(plotdf$specialist)] <- 0
 
-write.csv(plotdf, 'BeeCiteC5Genus')
+write_csv(plotdf, 'modeling_data/BeeCiteC5Genus')
 ```
 
 ```{r}
@@ -237,7 +242,7 @@ plotdf$specialist <- plotdf$west_specialist + plotdf$east_specialist + plotdf$ce
 plotdf$specialist <- as.integer(plotdf$specialist > 0)
 plotdf$specialist[is.na(plotdf$specialist)] <- 0
 
-write.csv(plotdf, 'BeeCiteWGenus')
+write_csv(plotdf, 'modeling_data/BeeCiteWGenus')
 ```
 
 

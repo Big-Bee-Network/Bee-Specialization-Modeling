@@ -7,12 +7,13 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/Users/colleen/Dropbox/Fall_2014/ucsb/Bee-Specialization-Modeling/")
+knitr::opts_knit$set(error=T)
+
 library(lifecycle)
 library(rvest)
-library(dplyr)
-library(tidyr)
+library(tidyverse)
 library(plotly)
-library(dplyr)
 library(data.table)
 library(stringr)
 library(readxl)
@@ -20,36 +21,39 @@ library(kableExtra)
 library(rcol)
 library(plyr)
 library(caret)
+```
 
-MS_data <- readxl::read_xlsx('/Users/nickbachelder/Desktop/UCSB Archive/Fall 2021/Data for Bees/DATA_pollen-diet-breadth_list_12-5-21_ALR.xlsx', sheet = 2)
+```{r}
+getwd()
 
+MS_data <- readxl::read_xlsx('modeling_data/DATA_pollen-diet-breadth_list_12-5-21_ALR.xlsx', sheet = 2)
 
-globee <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/Fowler-GLOBI Modeling/BeeCiteRaw') %>%
+globee <- read_csv('modeling_data/BeeCiteRaw') %>%
   dplyr::select(-west_specialist, -east_specialist, -cent_specialist, -specialist)
 
-globee_5cut <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/Fowler-GLOBI Modeling/BeeCiteC5') %>%
+globee_5cut <- read_csv('modeling_data/BeeCiteC5') %>%
   dplyr::select(-west_specialist, -east_specialist, -cent_specialist, -specialist)
 
-globee_T <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/Fowler-GLOBI Modeling/BeeCiteW') %>%
+globee_T <- read_csv('modeling_data/BeeCiteW') %>%
   dplyr::select(-west_specialist, -east_specialist, -cent_specialist, -specialist)
 
-fowler <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/Fowler-GLOBI Modeling/fowler') %>%
+fowler <- read.csv('modeling_data/fowler') %>%
    mutate(interestBee = str_to_title(interestBee)) %>%
   dplyr::select(interestBee, west_specialist, east_specialist, cent_specialist, specialist, Status_E, Status_W, Status_C) %>% 
   filter(grepl('^\\w+\\s\\w+$', interestBee))
 
-globeeGenus <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/Fowler-GLOBI Modeling/BeeCiteRawGenus') %>%
+globeeGenus <- read_csv('modeling_data/BeeCiteRawGenus') %>%
   dplyr::select(-west_specialist, -east_specialist, -cent_specialist, -specialist)
 
-globee_5cutGenus <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/Fowler-GLOBI Modeling/BeeCiteC5Genus') %>%
+globee_5cutGenus <- read_csv('modeling_data/BeeCiteC5Genus') %>%
   dplyr::select(-west_specialist, -east_specialist, -cent_specialist, -specialist)
 
-globee_TGenus <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/Fowler-GLOBI Modeling/BeeCiteWGenus') %>%
+globee_TGenus <- read_csv('modeling_data/BeeCiteWGenus') %>%
   dplyr::select(-west_specialist, -east_specialist, -cent_specialist, -specialist)
 ```
 
 ```{r}
-interactions <- read.csv('/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/interactions_dup.csv')
+interactions <- read_csv('modeling_data/interactions_dup.csv')
 
 (interactions %>% filter(targetTaxonRank == 'family') %>% dplyr::select(sourceTaxonName, interactionTypeName, targetTaxonName) %>% 
     dplyr::rename('Bee Species' = sourceTaxonName, 'Interaction' = interactionTypeName, 'Plant Family' = targetTaxonName))[c(172, 112, 300, 124 ,5),]  %>%
@@ -158,7 +162,7 @@ MS_data_format <- MS_data_format %>% left_join(pollen_family_MS, by = 'interestB
 ```{r}
 avery_send <- MS_data_format %>% select(interestBee, pollenHosts, pollen_host_familys) %>% mutate(ifelse(pollen_host_familys == 'NA', NA, pollen_host_familys))
 
-write.csv(avery_send, "/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/Family_Level_Transform.csv")
+# write.csv(avery_send, "/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/Family_Level_Transform.csv")
 
 avery_send
 ``` 
@@ -252,8 +256,8 @@ final <- compare_df %>% filter(existsMS == 1, existsGLOBEE == 1) %>%
                   visitation_hosts_GloBi_genus = str_to_title(visitation_hosts_GloBi_genus))
 
 final
-
-write.csv(final, '/Users/nickbachelder/Desktop/Bee-Specialization-Modeling/modeling_data/visitation_specialization_df')
+write_csv(compare_df,'modeling_data/compare_df.csv')
+write_csv(final, 'modeling_data/visitation_specialization_df')
 ```
 
 

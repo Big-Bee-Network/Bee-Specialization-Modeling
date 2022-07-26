@@ -1,0 +1,360 @@
+---
+title: "BeeModeling"
+author: "Nick R. Bachelder"
+date: "5/10/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/Users/colleen/Dropbox/Fall_2014/ucsb/Bee-Specialization-Modeling/")
+knitr::opts_knit$set(error=T)
+select = dplyr::select
+
+library(lifecycle)
+library(rvest)
+library(dplyr)
+library(plotly)
+library(tidyverse)
+library(data.table)
+
+
+```
+
+```{r, echo = False}
+options(max.print=1000000)
+interactions_b <- read.csv('modeling_data/interactions_dup.csv')
+ms <- read_xlsx('modeling_data/DATA_pollen-diet-breadth_list_12-5-21_ALR.xlsx', sheet = 3) %>%
+  rename_all(tolower) %>%
+  mutate(scientificName = paste0(genus, ' ',sub('.*\\. ','',species))) %>%
+  select(scientificName,everything()) %>%
+  rename(diet_breadth=`redefined pollen diet breadth`)
+fowler <- read_csv("modeling_data/fowler_hostplants.csv") 
+
+#who are the specialsits?
+#let's say specialist the MS list and everything on fowler list that's missing from ms list
+ms_oligo = ms$scientificName[ms$diet_breadth %in% c('Oligolectic','Monolectic')]
+add_from_fowler = unique(fowler$scientificName[!fowler$scientificName %in% ms$scientificName])
+specialists = c(ms_oligo,add_from_fowler)
+
+for (c in colnames(interactions_b)) {
+  interactions_b[[c]] <-  tolower(interactions_b[[c]])
+}
+
+# for (c in colnames(interactions_b)) {
+#   interactions_b[[c]] <-  tolower(interactions_b[[c]])
+# }
+```
+
+
+```{r}
+#how many species in the missouri state data are in the globi data?
+head(interactions_b)
+n_distinct(interactions_b$sourceTaxonName[interactions_b$sourceTaxonName  %in% tolower(ms$scientificName)]) #800 species in the ms data
+
+#how many are specialists
+ms_specialists = ms %>% filter(diet_breadth != 'Polylectic')
+n_distinct(interactions_b$sourceTaxonName[interactions_b$sourceTaxonName  %in% tolower(ms_specialists$scientificName)]) #503 specialist species 
+
+#how many are generalists
+ms_generalists = ms %>% filter(diet_breadth == 'Polylectic')
+n_distinct(interactions_b$sourceTaxonName[interactions_b$sourceTaxonName  %in% tolower(ms_generalists$scientificName)]) #296 generalist species 
+
+```
+
+```{r}
+interactions_b[1:5,1:5]
+```
+
+
+Let's do some reformatting
+```{r}
+capitalize = function(a_string){
+  
+  beginning = toupper(substr(a_string,1,1))
+  ending = substr(a_string,2,nchar(a_string))
+  
+  return(paste0(beginning,ending))
+
+}
+
+globi_summ = interactions_b %>% 
+  mutate(scientificName = capitalize(sourceTaxonSpeciesName), 
+         plant_family = capitalize(targetTaxonFamilyName), 
+         plant_genus = capitalize(targetTaxonGenusName)) %>%
+  filter(scientificName != '' & plant_family !='' & plant_genus != "") %>% 
+  group_by(scientificName, plant_genus, plant_family,) %>% 
+  summarize(n_genus = n()) %>% ungroup()
+
+
+```
+
+how many specialist bees do we have if we filter out interactions with <5 observations?
+```{r}
+globi_5n = globi_summ %>% filter(n_genus >= 5)
+n_distinct(globi_5n$scientificName[globi_5n$scientificName %in% ms_specialists$scientificName]) #only 360
+
+#how many other species
+n_distinct(globi_5n$scientificName[!globi_5n$scientificName %in% ms_specialists$scientificName]) # 730, so about 1000 total
+
+
+```
+Calculate number of interaction partners
+
+```{r}
+#calculate the number of plant families each bee species is observed visiting
+total_obs = globi_summ %>% group_by(scientificName) %>% summarize(n=sum(n_genus))
+
+# degree_by_fam 
+degree_by_fam = globi_summ %>% group_by(scientificName,plant_family) %>%
+  summarize(n_family = sum(n_genus)) %>%
+  left_join(total_obs) %>%
+  mutate(freq_squared = (n_family/n)^2) %>% group_by(scientificName,n) %>%
+  summarize(degree_family = n_distinct(plant_family), 
+            degree5_family = sum(n_family >= 5), weighted_degree_fam = sum(freq_squared))# %>%
+ 
+
+#calculate the number of plant genera each bee species is observed visiting
+degree_by_genus = globi_summ %>%
+  left_join(total_obs) %>%
+  mutate(freq_squared = (n_genus/n)^2) %>% 
+  group_by(scientificName) %>%
+  summarize(degree_genus = n_distinct(plant_genus), 
+            degree5_genus = sum(n_genus >= 5), weighted_degree_genus = sum(freq_squared)) 
+
+           
+globi_degree = degree_by_fam %>% left_join(degree_by_genus) %>%
+  mutate(diet_breadth = ifelse(scientificName %in% specialists,'specialist','generalist'))
+
+write_csv(globi_degree,'modeling_data/globi_degree.csv')
+
+```
+
+Define beeCites with varying criteria
+
+```{r, fig.width=5,fig.height=2}
+beeCiteNoFilter <- interactions_b %>% 
+  dplyr::select(sourceTaxonSpeciesName,targetTaxonFamilyName) %>% 
+  dplyr::rename(interestBee = sourceTaxonSpeciesName, interact = targetTaxonFamilyName) %>% dplyr::group_by(interestBee, interact) %>% dplyr::count() %>% ungroup() %>% 
+  filter(interestBee != "", interact != "")
+
+TotalCitations <- beeCiteNoFilter %>% group_by(interestBee) %>% dplyr::summarise(n_Bee = sum(n)) %>% ungroup()
+TotalCitations <- sum(TotalCitations$n_Bee)
+
+beeCiteNoFilter <- beeCiteNoFilter %>% group_by(interestBee) %>% dplyr::summarise(interact= interact, n = n, n_Bee = sum(n)) %>% ungroup()
+beeCiteNoFilter <- beeCiteNoFilter %>% dplyr::summarise(interestBee = interestBee, interact= interact, n = n, n_Bee = n_Bee, BeeFreq = n_Bee / TotalCitations) %>% ungroup() %>% unique()
+
+beeIntDegree <- beeCiteNoFilter %>% dplyr::select(interestBee, interact) %>% unique() %>% group_by(interestBee, interact) %>% dplyr::count() 
+beeIntDegree <- beeIntDegree %>% group_by(interestBee) %>% dplyr::summarise(interestBee = interestBee, degree = sum(n)) %>% unique()
+
+beeIntDegreeC10 <- beeCiteNoFilter %>% dplyr::select(interestBee, interact) %>% unique() %>% group_by(interestBee, interact) %>% dplyr::count()
+beeIntDegreeC10$numcitations <- beeCiteNoFilter$n
+beeIntDegreeC10 <- beeIntDegreeC10 %>% filter(numcitations >= 10)
+beeIntDegreeC10 <- beeIntDegreeC10 %>% group_by(interestBee) %>% dplyr::summarise(interestBee = interestBee, degree = sum(n)) %>% unique() ## min of 10 citations to contribute to degree
+
+beeIntDegreeC5 <- beeCiteNoFilter %>% dplyr::select(interestBee, interact) %>% unique() %>% group_by(interestBee, interact) %>% dplyr::count()
+beeIntDegreeC5$numcitations <- beeCiteNoFilter$n
+beeIntDegreeC5 <- beeIntDegreeC5 %>% filter(numcitations >= 5)
+beeIntDegreeC5 <- beeIntDegreeC5 %>% group_by(interestBee) %>% dplyr::summarise(interestBee = interestBee, degree = sum(n)) %>% unique() ## min of 5 citations to contribute to degree
+
+beeIntDegreeW <- beeCiteNoFilter %>% dplyr::select(interestBee, interact) %>% unique() %>% group_by(interestBee, interact) %>% dplyr::count()
+beeIntDegreeW$numcitations <- beeCiteNoFilter$n
+beeIntDegreeW$n_Bee <- beeCiteNoFilter$n_Bee
+beeIntDegreeW$n <- (beeIntDegreeW$numcitations / beeIntDegreeW$n_Bee)^2
+beeIntDegreeW <- beeIntDegreeW %>% group_by(interestBee) %>% dplyr::summarise(interestBee = interestBee, degree = sum(n)) %>% unique() ## weighted degree
+
+
+beeCite <-  left_join(beeCiteNoFilter, beeIntDegree, by = 'interestBee') 
+
+beeCiteC10 <-  left_join(beeCiteNoFilter, beeIntDegreeC10, by = 'interestBee')
+
+beeCiteC5 <-  left_join(beeCiteNoFilter, beeIntDegreeC5, by = 'interestBee')
+
+beeCiteW <-  left_join(beeCiteNoFilter, beeIntDegreeW, by = 'interestBee')
+
+
+beeCiteNoFilterGenus <- interactions_b %>% dplyr::select(sourceTaxonSpeciesName, targetTaxonGenusName) %>% 
+  dplyr::rename(interestBee = sourceTaxonSpeciesName, interact = targetTaxonGenusName) %>% group_by(interestBee, interact) %>% dplyr::count() %>% ungroup() %>% 
+  filter(interestBee != "", interact != "")
+
+TotalCitationsGenus <- beeCiteNoFilterGenus %>% group_by(interestBee) %>% dplyr::summarise(n_Bee = sum(n)) %>% ungroup()
+TotalCitationsGenus <- sum(TotalCitationsGenus$n_Bee)
+
+beeCiteNoFilterGenus <- beeCiteNoFilterGenus %>% group_by(interestBee) %>% dplyr::summarise(interact= interact, n = n, n_Bee = sum(n)) %>% ungroup()
+beeCiteNoFilterGenus <- beeCiteNoFilterGenus %>% dplyr::summarise(interestBee = interestBee, interact= interact, n = n, n_Bee = n_Bee, BeeFreq = n_Bee / TotalCitations) %>% ungroup()
+
+beeIntDegreeGenus <- beeCiteNoFilterGenus %>% dplyr::select(interestBee, interact) %>% unique() %>% group_by(interestBee, interact) %>% dplyr::count()
+beeIntDegreeGenus <- beeIntDegreeGenus %>% group_by(interestBee) %>% dplyr::summarise(interestBee = interestBee, degree = sum(n)) %>% unique()
+
+beeIntDegreeC10Genus <- beeCiteNoFilterGenus %>% dplyr::select(interestBee, interact) %>% unique() %>% group_by(interestBee, interact) %>% dplyr::count()
+beeIntDegreeC10Genus$numcitations <- beeCiteNoFilterGenus$n
+beeIntDegreeC10Genus <- beeIntDegreeC10Genus %>% filter(numcitations >= 10)
+beeIntDegreeC10Genus <- beeIntDegreeC10Genus %>% group_by(interestBee) %>% dplyr::summarise(interestBee = interestBee, degree = sum(n)) %>% unique() ## min of 10 citations to contribute to degree
+
+beeIntDegreeC5Genus <- beeCiteNoFilterGenus %>% dplyr::select(interestBee, interact) %>% unique() %>% group_by(interestBee, interact) %>% dplyr::count()
+beeIntDegreeC5Genus$numcitations <- beeCiteNoFilterGenus$n
+beeIntDegreeC5Genus <- beeIntDegreeC5Genus %>% filter(numcitations >= 5)
+beeIntDegreeC5Genus <- beeIntDegreeC5Genus %>% group_by(interestBee) %>% dplyr::summarise(interestBee = interestBee, degree = sum(n)) %>% unique() ## min of 5 citations to contribute to degree
+
+beeIntDegreeWGenus <- beeCiteNoFilterGenus %>% dplyr::select(interestBee, interact) %>% unique() %>% group_by(interestBee, interact) %>% dplyr::count()
+beeIntDegreeWGenus$numcitations <- beeCiteNoFilterGenus$n
+beeIntDegreeWGenus$n_Bee <- beeCiteNoFilterGenus$n_Bee
+beeIntDegreeWGenus$n <- (beeIntDegreeWGenus$numcitations / beeIntDegreeWGenus$n_Bee)^2
+beeIntDegreeWGenus <- beeIntDegreeWGenus %>% group_by(interestBee) %>% dplyr::summarise(interestBee = interestBee, degree = sum(n)) %>% unique() ## weighted degree
+
+
+beeCiteGenus <-  left_join(beeCiteNoFilterGenus, beeIntDegreeGenus, by = 'interestBee')
+
+beeCiteC10Genus <-  left_join(beeCiteNoFilterGenus, beeIntDegreeC10Genus, by = 'interestBee')
+
+beeCiteC5Genus <-  left_join(beeCiteNoFilterGenus, beeIntDegreeC5Genus, by = 'interestBee') 
+
+beeCiteWGenus <-  left_join(beeCiteNoFilterGenus, beeIntDegreeWGenus, by = 'interestBee')
+
+beeCite[1:10,]
+```
+
+
+```{r}
+beeCiteGenus <- beeCiteGenus %>% dplyr::rename(interactGenus = interact, number_of_citations_of_genus_interaction = n, number_of_citation_for_bee_species = n_Bee, 
+                        bee_proportion_of_all_bee_citations = BeeFreq, degreeGenus = degree)
+
+beeCite <- beeCite %>% dplyr::rename(interactFamily = interact, number_of_citations_of_family_interaction = n, number_of_citation_for_bee_species = n_Bee, 
+                        bee_proportion_of_all_bee_citations = BeeFreq, degreeFamily = degree)
+
+beeCiteC5Genus <- beeCiteC5Genus %>% dplyr::rename(interactGenus = interact, number_of_citations_of_genus_interaction = n, number_of_citation_for_bee_species = n_Bee, 
+                        bee_proportion_of_all_bee_citations = BeeFreq, degreeC5Genus = degree)
+
+beeCiteC5 <- beeCiteC5 %>% dplyr::rename(interactFamily = interact, number_of_citations_of_family_interaction = n, number_of_citation_for_bee_species = n_Bee, 
+                        bee_proportion_of_all_bee_citations = BeeFreq, degreeC5Family = degree)
+
+beeCiteWGenus <- beeCiteWGenus %>% dplyr::rename(interactGenus = interact, number_of_citations_of_genus_interaction = n, number_of_citation_for_bee_species = n_Bee, 
+                        bee_proportion_of_all_bee_citations = BeeFreq, degreeWGenus = degree)
+beeCiteW <- beeCiteW %>% dplyr::rename(interactFamily = interact, number_of_citations_of_family_interaction = n, number_of_citation_for_bee_species = n_Bee, 
+                        bee_proportion_of_all_bee_citations = BeeFreq, degreeWFamily = degree)
+
+beeCiteW[1:5,]
+```
+
+
+
+## Include Fowler Data
+
+```{r}
+western_page <- read_html("https://jarrodfowler.com/pollen_specialist.html")
+eastern_page <- read_html("https://jarrodfowler.com/specialist_bees.html")
+central_page <- read_html("https://jarrodfowler.com/bees_pollen.html")
+
+
+western_table <- western_page %>% html_table(fill=TRUE)
+eastern_table<- eastern_page %>% html_table(fill=TRUE)
+central_table<- central_page %>% html_table(fill=TRUE)
+
+
+western_table <- as.data.frame(western_table) %>% dplyr::select(-Family..Subfamily..Tribe..Subtribe)
+eastern_table <- as.data.frame(eastern_table) %>% dplyr::select(-Family..Subfamily..Tribe..Subtribe)
+central_table <- as.data.frame(central_table) %>% dplyr::select(-Family..Subfamily..Tribe..Subtribe)
+
+western_table$interestBee <- tolower(gsub(" *\\(.*?\\) *", "", western_table$Genus..Subgenus..species))
+eastern_table$interestBee <- tolower(gsub(" *\\(.*?\\) *", "", eastern_table$Genus..Subgenus..species))
+central_table$interestBee <- tolower(gsub(" *\\(.*?\\) *", "", central_table$Genus..Subgenus..species))
+
+table <- rbind(western_table, eastern_table, central_table)
+table$interestBee <- tolower(gsub(" *\\(.*?\\) *", "", table$Genus..Subgenus..species))
+
+western_table$west_specialist <- 1
+western_test <- western_table %>% dplyr::select(interestBee, west_specialist, Status) %>% dplyr::rename('Status_W' = 'Status') %>% unique()
+
+eastern_table$east_specialist <- 1
+eastern_test <- eastern_table %>% dplyr::select(interestBee, east_specialist, Status)%>% dplyr::rename('Status_E'= 'Status') %>% unique()
+
+central_table$cent_specialist <- 1
+central_test <- central_table %>% dplyr::select(interestBee, cent_specialist, Status)%>% dplyr::rename('Status_C'= 'Status') %>% unique()
+
+tablejoining <- merge(x = western_test, y = eastern_test, by = "interestBee", all = TRUE)
+table_test <- merge(x = tablejoining, y = central_test, by = "interestBee", all = TRUE)
+
+table_test$specialist <- table_test$west_specialist + table_test$east_specialist + table_test$cent_specialist
+table_test$specialist <- as.integer(table_test$specialist > 0)
+table_test$specialist[is.na(table_test$specialist)] <- 0
+getwd()
+
+# write_csv(table_test, 'modeling_data/fowler')
+```
+```{r reformat the table to include host plant data}
+fowler_table = eastern_table %>% mutate(region = 'east') %>%
+  bind_rows(central_table %>% mutate(region='central')) %>%
+  bind_rows(western_table %>% mutate(region = 'west')) %>%
+  rename(host_plant = Host.plant.Family..Tribe..Genera) %>%
+  rename_all(tolower) %>%
+  mutate(scientificName = gsub(" *\\(.*?\\) *", "", genus..subgenus..species)) %>%
+  select(scientificName,authority,status,host_plant,region) %>%
+  #remove astericks from some of the scientific names:
+  mutate(scientificName = ifelse(grepl("\\*",scientificName),sub("\\*.*","",scientificName),scientificName))
+
+
+
+# write_csv(fowler_table,'modeling_data/fowler_hostplants.csv')
+```
+
+```{r}
+plotdf <- merge(beeCite, table_test, by = 'interestBee', all.x = TRUE)
+
+nrow(plotdf)
+
+plotdf$specialist <- plotdf$west_specialist + plotdf$east_specialist + plotdf$cent_specialist
+plotdf$specialist <- as.integer(plotdf$specialist > 0)
+plotdf$specialist[is.na(plotdf$specialist)] <- 0
+
+write_csv(plotdf, 'modeling_data/BeeCiteRaw')
+```
+
+```{r}
+plotdf <- merge(beeCiteC5, table_test, by = 'interestBee', all.x = TRUE)
+plotdf$specialist <- plotdf$west_specialist + plotdf$east_specialist + plotdf$cent_specialist
+plotdf$specialist <- as.integer(plotdf$specialist > 0)
+plotdf$specialist[is.na(plotdf$specialist)] <- 0
+
+write_csv(plotdf, 'modeling_data/BeeCiteC5')
+```
+
+```{r}
+plotdf <- merge(beeCiteW, table_test, by = 'interestBee', all.x = TRUE)
+plotdf$specialist <- plotdf$west_specialist + plotdf$east_specialist + plotdf$cent_specialist
+plotdf$specialist <- as.integer(plotdf$specialist > 0)
+plotdf$specialist[is.na(plotdf$specialist)] <- 0
+
+write_csv(plotdf, 'modeling_data/BeeCiteW')
+```
+
+```{r}
+plotdf <- merge(beeCiteGenus, table_test, by = 'interestBee', all.x = TRUE)
+plotdf$specialist <- plotdf$west_specialist + plotdf$east_specialist + plotdf$cent_specialist
+plotdf$specialist <- as.integer(plotdf$specialist > 0)
+plotdf$specialist[is.na(plotdf$specialist)] <- 0
+
+write_csv(plotdf, 'modeling_data/BeeCiteRawGenus')
+```
+
+```{r}
+plotdf <- merge(beeCiteC5Genus, table_test, by = 'interestBee', all.x = TRUE)
+plotdf$specialist <- plotdf$west_specialist + plotdf$east_specialist + plotdf$cent_specialist
+plotdf$specialist <- as.integer(plotdf$specialist > 0)
+plotdf$specialist[is.na(plotdf$specialist)] <- 0
+
+write_csv(plotdf, 'modeling_data/BeeCiteC5Genus')
+```
+
+```{r}
+plotdf <- merge(beeCiteWGenus, table_test, by = 'interestBee', all.x = TRUE)
+plotdf$specialist <- plotdf$west_specialist + plotdf$east_specialist + plotdf$cent_specialist
+plotdf$specialist <- as.integer(plotdf$specialist > 0)
+plotdf$specialist[is.na(plotdf$specialist)] <- 0
+
+write_csv(plotdf, 'modeling_data/BeeCiteWGenus')
+```
+
+
+
+
+

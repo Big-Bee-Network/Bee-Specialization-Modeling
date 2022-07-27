@@ -17,6 +17,8 @@ library(dplyr)
 library(plotly)
 library(tidyverse)
 library(data.table)
+library(readxl)
+library(Taxonstand)
 
 
 ```
@@ -66,8 +68,7 @@ n_distinct(interactions_b$sourceTaxonName[interactions_b$sourceTaxonName  %in% t
 interactions_b[1:5,1:5]
 ```
 
-
-Let's do some reformatting
+Let's reformat and update the plant names in the interaction data 
 ```{r}
 capitalize = function(a_string){
   
@@ -78,13 +79,53 @@ capitalize = function(a_string){
 
 }
 
-globi_summ = interactions_b %>% 
+interactions_reformat = interactions_b %>% 
   mutate(scientificName = capitalize(sourceTaxonSpeciesName), 
+         bee_family = capitalize(sourceTaxonFamilyName),
          plant_family = capitalize(targetTaxonFamilyName), 
-         plant_genus = capitalize(targetTaxonGenusName)) %>%
-  filter(scientificName != '' & plant_family !='' & plant_genus != "") %>% 
-  group_by(scientificName, plant_genus, plant_family,) %>% 
-  summarize(n_genus = n()) %>% ungroup()
+         plant_genus = capitalize(targetTaxonGenusName),
+         plant_species = capitalize(targetTaxonName)) %>%
+  filter(scientificName != '' & plant_family !='' & plant_genus != "")
+
+#
+
+plant_df = interactions_reformat %>%
+  distinct(plant_species)
+test_me = plant_df$plant_species
+
+# check_names = TPL(test_me) #takes forever to run, download output as csv
+# write_csv(check_names,'modeling_data/plant_list_name_update.csv')
+check_names = read_csv('modeling_data/plant_list_name_update.csv')
+
+
+check_names %>% filter(Taxonomic.status != 'Accepted') %>% 
+  select(Taxon,New.Genus,New.Species)
+
+tpl_formatted = check_names %>% rename(plant_species = Taxon) %>% 
+  mutate(accepted_name = ifelse(!is.na(New.Species),paste(New.Genus,New.Species),New.Genus) ) %>%
+  mutate(accepted_name = ifelse(is.na(accepted_name), plant_species, accepted_name)) %>%
+  select(plant_species,accepted_name)
+
+tpl_formatted %>% filter(is.na(accepted_name))
+
+#add accepted_name column to plant_df
+interactions_updated = interactions_reformat %>% 
+  group_by(scientificName,bee_family,plant_species,plant_family) %>%
+  summarize(n=n()) %>%
+  ungroup %>%
+  left_join(tpl_formatted) %>%
+  select(-plant_species) %>%
+  rename(plant_species = accepted_name) %>%
+  mutate(plant_genus = sub(" .*","",plant_species))
+
+```
+
+Let's do some reformatting
+```{r}
+
+globi_summ = interactions_updated %>%
+  group_by(scientificName, plant_genus, plant_family,bee_family) %>%
+  summarize(n_genus = sum(n)) %>% ungroup()
 
 
 ```
@@ -118,14 +159,14 @@ degree_by_fam = globi_summ %>% group_by(scientificName,plant_family) %>%
 degree_by_genus = globi_summ %>%
   left_join(total_obs) %>%
   mutate(freq_squared = (n_genus/n)^2) %>% 
-  group_by(scientificName) %>%
+  group_by(scientificName,bee_family) %>%
   summarize(degree_genus = n_distinct(plant_genus), 
             degree5_genus = sum(n_genus >= 5), weighted_degree_genus = sum(freq_squared)) 
 
            
 globi_degree = degree_by_fam %>% left_join(degree_by_genus) %>%
   mutate(diet_breadth = ifelse(scientificName %in% specialists,'specialist','generalist'))
-
-# write_csv(globi_degree,'modeling_data/globi_degree.csv')
+getwd()
+# write_csv(globi_degree,'modelign_data/globi_degree.csv')
 
 ```

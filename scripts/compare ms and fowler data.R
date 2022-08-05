@@ -3,6 +3,9 @@ library(tidyverse)
 library(readxl)
 library(furrr)
 library(rgbif)
+library(kewr)
+library(taxize)
+
 
 select = dplyr::select; map = purrr::map; rename = dplyr::rename
 
@@ -267,7 +270,8 @@ ms_hosts_formatted %>% filter(grepl('Physalis?',host))
 "Helinathus"
 Hymenopappus.
 Boltonia.
-
+ms_hosts_formatted %>% 
+  filter(grepl('aceae',pollen_host_vec))
 unique(ms_hosts_formatted$host)
 
 # #use taxonstand to check for mis-spellings
@@ -276,48 +280,96 @@ host_genera = unique(ms_hosts_formatted[ms_hosts_formatted$rank == 'genus',]$hos
 # check_spelling = TPL(host_genera)
 # check_spelling %>% filter(Typo) %>% dplyr::select(Taxon,New.Genus)
 
-# #get families of genera
-library(taxize)
-# divide_by = ceiling(length(host_genera)/6)
-# tax_name(sci='Acer', get="family",messages=T,ask=F)
-# 
-# 1:6 %>% purrr::map(function(i) indices = ((i-1)*divide_by+1):(i*divide_by))
-# plan(multisession,workers=6)
-# get_fams_ls = 1:6 %>% future_map((function(i){
-#   
-#   indices = ((i-1)*divide_by+1):(i*divide_by)
-#   sci_names = host_genera[indices]
-#   get_fams = tax_name(sci=sci_names[!is.na(sci_names)], get="family",messages=T,ask=F)
-#   return(get_fams)
-# 
-#   }),.options = furrr_options(seed=T))
-# saveRDS(get_fams_ls,'modeling_data/ms_plant_fams.rds')
-get_fam_ls = readRDS('modeling_data/ms_plant_fams.rds')
-find_elsewhere = get_fam_ls %>% bind_rows %>% filter(is.na(family))
-
-get_fams_again = tax_name(sci = find_elsewhere$query,get = 'family',db = 'ncbi',division_filter = "eudicots")
-
-still_need = get_fams_again %>% filter(is.na(family))
-Taxonstand::TPL('Acer rubrum')
 
 
-get_fams_tstand = Taxonstand::TPL(still_need$query)
+#search for family names using the world checklist of vascular plants
+plan(multisession,workers=6)
+host_genera
 
-#
-clist = read_table("modeling_data/wcvp_v9_jun_2022 copy.txt")
-devtools::install_github("barnabywalker/kewr")
-library("kewr")
-poa= search_wcvp("Poa")
+get_fams = host_genera %>% future_map(function(sciname){
+  output = search_wcvp(sciname, filters=c("families", "accepted"),limit = 1)
+  output_df = tidy(output)
+  
+  if(nrow(output_df) !=0){
+    return_df = data.frame(genus = sciname,family = output_df$family)
+    
+  }
+  else{
+    output = search_wcvp(sciname, filters=c("families"),limit = 1)
+    df=tidy(output)
+    
+    if(nrow(df) !=0){
+      new_output_df = df$synonymOf[[1]]
+      return_df = data.frame(genus = sciname,family = new_output_df$family)
+      
+    }else{
+      return_df = data.frame(genus=sciname,family = NA)
+      }
+    }
+  }) %>% bind_rows
 
-download_wcvp()
-poa$results[[1]]
-clist[10908,]
+still_need_fams = get_fams %>% filter(is.na(family))
 
-clist[10909,]
-clist[10910,]
-clist[10911,]
+#for the other plants, input families manually
+add_fam_info = data.frame(genus = c('Psilotrophe','Horkelia'),
+                          family = c('Asteraceae','Rosaceae'))
 
-download_wcvp()
+get_fams_final = get_fams %>% 
+  filter(!is.na(family)) %>% filter(genus %in% add_fam_info$genus==F) %>% 
+  bind_rows(add_fam_info)
 
+#add to ms_hosts_formatted
+ms_hosts_formatted_fams = ms_hosts_formatted %>%
+  filter(rank=="genus") %>%
+  left_join(get_fams_final %>% 
+              rename(host=genus)) %>%
+  bind_rows(ms_hosts_formatted %>%
+              filter(rank=='family') %>% mutate(family=host))
+nrow(ms_hosts_formatted_fams) == nrow(ms_hosts_formatted)
+ms_hosts_formatted_fams %>%
+  filter(rank == 'family')
+#reformat the data
+#pseudo-code:
+#loop through all the bees
+# if the bee is monolectic - just get the genus and its family
+# if the bee is 'oligolectic' - get the family - and double check no genera i other fams
+ms_data = ms_usa %>% 
+  filter(diet_breadth !='Polylectic')
 
+ms_check = ms_data %>% 
+  select(scientificName,diet_breadth,pollen_host) %>%
+  left_join(ms_hosts_formatted_fams %>%
+              rename(pollen_host = pollen_host_vec))
+ms_check %>% filter(is.na(family))
+ms_simplified 
 
+#first check that monolectic bees all specialize on a single genus
+mono_wrong = ms_check %>% filter(diet_breadth=="Monolectic") %>% split(.$scientificName) %>%
+  purrr::map_dfr(function(df){
+   if( 'family' %in% df$rank | nrow(df) !=1){
+     output = df
+   }else{
+     output = NULL
+   }
+  })
+data.frame(mono_wrong)  #looks like must of these have one genus with the family name included
+nrow(ms)
+nrow(ms_hosts_formatted)
+# next check if the bee is 'oligolectic' that the bee specializes on one family - 
+# and double check no genera the bee uses from other fams
+oligo_wrong = ms_check %>% filter(diet_breadth=="Oligolectic") %>% split(.$scientificName) %>%
+  purrr::map_dfr(function(df){
+    if(n_distinct(df$family)>1){
+      output = df
+    }else{
+      output = NULL
+    }
+  })
+data.frame(oligo_wrong)  
+oligo_wrong %>% filter(is.na(family))
+oligo_wrong %>% distinct(scientificName, pollen_host)
+oligo_wrong %>% split(.$scientificName) %>% map(function(df) df %>% select(scientificName, host,family)) 
+#double checked these bees - and should be classified as polylectic
+(a=search_wcvp("Horkelia", filters=c("families")))
+(b=tidy(a))
+b$synonymOf

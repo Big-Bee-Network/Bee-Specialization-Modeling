@@ -281,7 +281,6 @@ host_genera = unique(ms_hosts_formatted[ms_hosts_formatted$rank == 'genus',]$hos
 # check_spelling %>% filter(Typo) %>% dplyr::select(Taxon,New.Genus)
 
 
-
 #search for family names using the world checklist of vascular plants
 plan(multisession,workers=6)
 host_genera
@@ -341,7 +340,7 @@ ms_check = ms_data %>%
   left_join(ms_hosts_formatted_fams %>%
               rename(pollen_host = pollen_host_vec))
 ms_check %>% filter(is.na(family))
-ms_simplified 
+ms_check
 
 #first check that monolectic bees all specialize on a single genus
 mono_wrong = ms_check %>% filter(diet_breadth=="Monolectic") %>% split(.$scientificName) %>%
@@ -355,9 +354,58 @@ mono_wrong = ms_check %>% filter(diet_breadth=="Monolectic") %>% split(.$scienti
 data.frame(mono_wrong)  #looks like must of these have one genus with the family name included
 nrow(ms)
 nrow(ms_hosts_formatted)
+
+mono_wrong2 = ms_check %>% filter(diet_breadth=="Monolectic") %>% split(.$scientificName) %>%
+  purrr::map_dfr(function(df){
+    df2 = df %>% filter(rank != 'family')
+    if(nrow(df2) !=1){
+      output = df2
+    }else{
+      output = NULL
+    }
+  })
+data.frame(mono_wrong2)
+
+#double check that for [monolectic species with family + genus listed, the genus is in that family]
+a=ms_check %>% 
+  filter(diet_breadth=="Monolectic") %>% 
+  split(.$scientificName) 
+(df = a[[21]])
+mono_wrong3 = ms_check %>% 
+  filter(diet_breadth=="Monolectic") %>% 
+  split(.$scientificName) %>%
+  
+  purrr::map_dfr(function(df){
+    if('family' %in% df$rank){
+      #get the family that's listed
+      df_fam = df %>% filter(rank == 'family')
+      the_fam = df_fam$family
+      
+      #check that the genera listed are in that family
+      df_gen = df %>% filter(rank == 'genus')
+      
+      if(df_gen$family != the_fam){
+        output = df
+      }else{
+        output=NULL
+      }
+      
+      }else{
+      output = NULL
+      }
+  
+    })
+data.frame(mono_wrong3)
+
+# hmmm, Eriodictyon was formerly in hydrophyllaceae, which may be why these are different
+# for Chelostoma cockerelli. From source article for that species (Sedivy et al 2008)
+# "Several genera among the Hydrophyllaceae (e.g., Eriodictyon, Nama, Phacelia) " so that ref 
+# is clearly using old classification.... nama was also previously in Hydrophyllaceae
+
 # next check if the bee is 'oligolectic' that the bee specializes on one family - 
 # and double check no genera the bee uses from other fams
-oligo_wrong = ms_check %>% filter(diet_breadth=="Oligolectic") %>% split(.$scientificName) %>%
+oligo_wrong = ms_check %>% filter(diet_breadth=="Oligolectic") %>% 
+  split(.$scientificName) %>%
   purrr::map_dfr(function(df){
     if(n_distinct(df$family)>1){
       output = df
@@ -369,7 +417,234 @@ data.frame(oligo_wrong)
 oligo_wrong %>% filter(is.na(family))
 oligo_wrong %>% distinct(scientificName, pollen_host)
 oligo_wrong %>% split(.$scientificName) %>% map(function(df) df %>% select(scientificName, host,family)) 
+
 #double checked these bees - and should be classified as polylectic
+# go back and change these bees' categories
+unique(oligo_wrong$scientificName)
 (a=search_wcvp("Horkelia", filters=c("families")))
 (b=tidy(a))
 b$synonymOf
+
+# re-make the discrepancy table
+## code from above:
+
+# for things with multiple genera in the same family - just make it a family-level specialist
+a=ms_check %>% 
+  split(.$scientificName) #%>%
+(df = a[[10]])
+
+ms_simplified_ls = ms_check %>% 
+  split(.$scientificName) %>%
+  purrr::map(function(df){
+    if("family" %in% df$rank & n_distinct(df$family)==1) keep_df = df %>% filter(rank=='family')
+    if("family" %in% df$rank & n_distinct(df$family) > 1){
+      
+      keep_df = data.frame(
+        scientificName = df$scientificName[1],
+        diet_breadth = df$diet_breadth[1],
+        pollen_host = df$pollen_host[1],
+        host = unique(df$family),
+        rank = 'family',
+        family = unique(df$family)
+        
+      )
+    }
+    if("family" %in% df$rank == F & nrow(df)>1){
+      keep_df = data.frame(
+        scientificName = df$scientificName[1],
+        diet_breadth = df$diet_breadth[1],
+        pollen_host = df$pollen_host[1],
+        host = unique(df$family),
+        rank = 'family',
+        family = unique(df$family)
+        
+      )}
+    if(nrow(df)==1) keep_df =df
+      return(keep_df)
+      
+    })
+ms_simplified = ms_simplified_ls %>% bind_rows
+which(ms_simplified_ls %>% map_lgl(function(df) nrow(df)>1))
+ms_simplified_ls %>% bind_rows %>% filter(scientificName == "Chelostoma cockerelli")
+
+ms_discrepancies = ms_simplified %>% 
+  filter(scientificName %in% discrepancies$scientificName)
+
+# reformat the host column:
+a=ms_discrepancies %>% 
+  split(.$scientificName) #%>%
+df = a[[1]]
+ms_specialist_discrepancies = ms_discrepancies %>% 
+  split(.$scientificName) %>% 
+  purrr::map_dfr(function(df){
+    hosts = df$host
+    host_vec = ""
+    for(i in 1:length(hosts)){
+      taxon = hosts[i]
+      if(i == 1){
+        host_vec = taxon
+      }else{
+        host_vec = paste0(host_vec,', ', taxon)
+      }
+    }
+    data.frame(scientificName = df$scientificName[1],ms_hosts =host_vec)
+  
+    })
+
+generalist_ms_hosts=discrepancies %>% filter(!scientificName %in% ms_specialist_discrepancies$scientificName)
+gen_hosts = unique(generalist_ms_hosts$`Hosts (this ms)`)
+gen_hosts = unique(ms_usa[ms_usa$diet_breadth == 'Polylectic',]$pollen_host)
+host_string = gen_hosts[1]
+gen_hosts_formatted = gen_hosts %>% 
+  purrr::map_dfr(function(host_string){
+    
+  hosts = strsplit(host_string,", ")[[1]] #remove commas and spaces
+    
+  # if anything is full species get rid of the epithet
+  hosts_no_species = sub(" .*","",hosts)
+    
+  # get rid of anything that's duplicated
+  hosts_final = unique(hosts_no_species)
+    
+  # return as a data-frame
+  data.frame(pollen_host_vec = host_string, host = hosts_final)
+  
+  }) %>%
+  mutate(rank = ifelse(grepl('aceae',host),'family','genus'))
+gen_hosts_formatted
+
+# # use taxonstand to check for mis-spellings
+host_genera = unique(gen_hosts_formatted[gen_hosts_formatted$rank == 'genus',]$host)
+# check_spelling = TPL(host_genera)
+# check_spelling %>% filter(Typo) %>% dplyr::select(Taxon,New.Genus)
+check_me = gen_hosts_formatted %>% filter(host=="")
+gen_hosts_formatted %>% filter(pollen_host_vec==check_me$pollen_host_vec)
+
+#search for family names using the world checklist of vascular plants
+plan(multisession,workers=6)
+host_genera
+
+get_fams = host_genera %>% future_map(function(sciname){
+  output = search_wcvp(sciname, filters=c("families", "accepted"),limit = 1)
+  output_df = tidy(output)
+  
+  if(nrow(output_df) !=0){
+    return_df = data.frame(genus = sciname,family = output_df$family)
+    
+  }
+  else{
+    output = search_wcvp(sciname, filters=c("families"),limit = 1)
+    df=tidy(output)
+    
+    if(nrow(df) !=0){
+      new_output_df = df$synonymOf[[1]]
+      return_df = data.frame(genus = sciname,family = new_output_df$family)
+      
+    }else{
+      return_df = data.frame(genus=sciname,family = NA)
+    }
+  }
+}) %>% bind_rows
+
+(still_need_fams = get_fams %>% filter(is.na(family)))
+
+#for the other plants, input families manually
+add_fam_info = data.frame(genus = c('Eleagnus'),
+                          family = c('Elaeagnaceae'))
+
+get_fams_final = get_fams %>% 
+  filter(!is.na(family)) %>% filter(genus %in% add_fam_info$genus==F) %>% 
+  bind_rows(add_fam_info)
+
+#add to ms_hosts_formatted
+gen_hosts_formatted_fams = gen_hosts_formatted %>%
+  filter(rank=="genus") %>%
+  left_join(get_fams_final %>% 
+              rename(host=genus)) %>%
+  bind_rows(gen_hosts_formatted %>%
+              filter(rank=='family') %>% mutate(family=host))
+nrow(gen_hosts_formatted_fams) == nrow(gen_hosts_formatted)
+gen_hosts_formatted_fams %>%
+  filter(rank == 'family')
+
+# format so that one fam for fams with more than one genus
+gen_check = gen_hosts_formatted_fams %>% left_join(ms_usa %>% rename(pollen_host_vec=pollen_host))
+
+#code for this: 
+# split df by bee species, and then split by plant family?
+# if there's only one genus from a plant family, just include that?
+a = gen_check %>% 
+  split(.$scientificName)
+bee_df = a[[18]]
+b=bee_df %>% split(.$family)
+(plant_df=b[[2]])
+
+gen_simplified_ls = gen_check %>% 
+  split(.$scientificName) %>%
+  purrr::map(function(bee_df){
+    
+    bee_df %>% split(.$family) %>% purrr::map_dfr(function(plant_df){
+      if(nrow(plant_df) ==1){
+        keep_df = with(plant_df, data.frame(
+          scientificName = scientificName,
+          diet_breadth = "Polylectic",
+          pollen_host = pollen_host_vec,
+          host = host,
+          rank = rank,
+          family = family
+          
+        ))
+      } 
+      if(nrow(plant_df) != 1){
+        keep_df = with(plant_df, data.frame(
+          scientificName = scientificName[1],
+          diet_breadth = "Polylectic",
+          pollen_host = pollen_host_vec[1],
+          host = family[1],
+          rank = 'family',
+          family = family[1]
+       
+          
+        ))
+      }
+    return(keep_df)
+    })
+  })
+gen_simplified = gen_simplified_ls %>% bind_rows
+
+# check that no listed polylectic bees are actually specialists (based on their pollen hosts)
+which(gen_simplified_ls %>% map_lgl(function(df) nrow(df)==1))
+
+
+# reformat the host column:
+ms_discrepancies = ms_simplified %>% bind_rows(gen_simplified) %>%
+  filter(scientificName %in% discrepancies_final$scientificName)
+
+a=ms_discrepancies %>% 
+  split(.$scientificName) #%>%
+
+df = a[[1]]
+ms_all_discrepancies = ms_discrepancies %>% 
+  split(.$scientificName) %>% 
+  purrr::map_dfr(function(df){
+    hosts = df$host
+    host_vec = ""
+    for(i in 1:length(hosts)){
+      taxon = hosts[i]
+      if(i == 1){
+        host_vec = taxon
+      }else{
+        host_vec = paste0(host_vec,', ', taxon)
+      }
+    }
+    data.frame(scientificName = df$scientificName[1],ms_hosts =host_vec)
+    
+  })
+
+head(discrepancies)
+discrepancies_final_final = discrepancies_final %>% 
+  dplyr::select(-`Hosts (this ms)`) %>% 
+  left_join(ms_all_discrepancies) %>%
+  rename(`This ms`=This_ms,`Hosts (this ms)`=ms_hosts)
+nrow(discrepancies_final) == nrow(discrepancies_final_final)
+# write_csv(discrepancies_final_final,'modeling_data/discrepancies_fowler_ms.csv')

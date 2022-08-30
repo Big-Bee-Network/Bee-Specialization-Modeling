@@ -4,6 +4,7 @@ library(vroom)
 library(maps)
 library(sf)
 library(vegan)
+library(randomForest)
 
 # load the globi data
 # exclude interactions of non-US bees
@@ -40,6 +41,7 @@ fowler <- read_csv("modeling_data/fowler_hostplants.csv") %>%
   mutate(diet_breadth_detailed = ifelse(diet_breadth=='generalist','generalist',diet_breadth_detailed))
 
 specialists = fowler[fowler$diet_breadth=='specialist',]$scientificName
+fowler_formatted = read_csv('modeling_data/fowler_formatted.csv')
 
 #some bees have different host plants on the east/west/central lists - we need to make their diet breadths consistent
 check_me = fowler %>% distinct(scientificName,diet_breadth,diet_breadth_detailed)
@@ -100,7 +102,11 @@ plan(multisession, workers=6)
 # #
 # saveRDS(bee_occ,'modeling_data/bee_occ_usa.rds')
 bee_occ = readRDS('modeling_data/bee_occ_usa.rds')
+r_obj=bee_occ[[2]]
 
+which(bee_occ %>% map_lgl(is.null))
+nrow(r_obj)
+r_obj$query
 #to be conservative let's say a bee ha to have at least 5 occurrence records in the US
 american_bees_tokeep=which(bee_occ %>% purrr::map_lgl(function(r_obj) {
   
@@ -121,9 +127,37 @@ unknown_bees = slist_globi[!slist_globi %in% usa_bees$scientificName]
 unknown_bees[american_bees_tokeep]
 american2 = unknown_bees[american_bees_tokeep]
 
-#add to final list, the species that are on jarrod fowler's list
-american_sp_keep = c(american1, american2) 
-globi_usa = globi_r %>% filter(scientificName %in% american_sp_keep)
+
+#let's exclude non-native species
+nonnative = read_csv("/Users/colleen/Dropbox/My Mac (MacBook-Air.local)/Downloads/BeeGap_Taxonomy and General Traits.csv") %>% 
+  filter(`Native?` == "N") %>% 
+  distinct(Genus,Species) %>%
+  mutate(scientificName = paste(Genus,Species))
+
+#list below from Russo 2016
+# https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5198217/
+more_nonnatives = c("Hylaeus variegates", "Hylaeus albonitens",
+                    "Hylaeus hyalinatus", "Hylaeus leptocephalus"," Hylaeus punctatus",
+                    "Hylaeus strenuus","Andrena wilkella", "Halictus tectus", "Lasioglossum eleutherense",
+                    "Lasioglossum leucozonium", "Lasioglossum zonulum", "Anthidium manicatum",
+                    "Anthidium oblongatum", "Chelostoma campanularum", "Coelioxys coturnix", "Heriades truncorum", "Hoplitis anthocopoides",
+                    "Lithurgus chrysurus", "Lithurgus scabrosus", "Megachile apicalis", "Megachile chlorura", "Megachile concinna", "Megachile ericetorum",
+                    "Megachile fullawayi", "Megachile lanata",	"Megachile rotundata", "Megachile sculpturalis", "Osmia caerulescens",
+                    "Osmia cornifrons", "Osmia taurus", "Anthophora villosula", "Apis mellifera", "Ceratina cobaltina",
+                    "Ceratina dallatorreana", "Euglossa dilemma", "Plebia frontalis", "Xylocopa appendiculata")
+#still some bees left to check:
+check_native = data.frame(scientificName = american2) %>% filter(!scientificName %in% c(nonnative$scientificName,more_nonnatives))
+
+# write_csv(check_native,'modeling_data/check_native_status.csv')
+even_more_nonnatives = read_csv('modeling_data/unknown_native_status.csv') %>%
+  filter(status == 'introduced')
+
+introduced_bees = c(even_more_nonnatives$scientificName,more_nonnatives,nonnative$scientificName)
+
+#
+american_sp_keep = c(american1, american2)[!c(american1,american2) %in% introduced_bees]
+globi_usa = globi_r %>% filter(scientificName %in% american_sp_keep) 
+
 
 # update the plant family names using world checklist for vascular plants
 # get_fams = unique(globi_usa$plant_genus) %>% future_map(function(sciname){
@@ -186,7 +220,7 @@ degree_by_fam = globi_summ %>%
   summarize(n_family = sum(n_genus)) %>%
   summarize(degree_family = n_distinct(plant_family), 
             degree5_family = sum(n_family >= 5), 
-            simpson = diversity(n_family,index='invsimpson'))# %>%
+            simpson_fam = diversity(n_family,index='invsimpson'))# %>%
 
 diversity(x, index = "simpson")
 
@@ -194,56 +228,187 @@ diversity(x, index = "simpson")
 degree_by_genus = globi_summ %>%
   group_by(scientificName,bee_family) %>%
   summarize(degree_genus = n_distinct(plant_genus), 
-            degree5_genus = sum(n_genus >= 5), weighted_degree_genus = diversity(n_genus,index='invsimpson')) 
+            degree5_genus = sum(n_genus >= 5), 
+            simpson_genus = diversity(n_genus,index='invsimpson')) 
 
 
 globi_degree = degree_by_fam %>% left_join(degree_by_genus) %>% 
   left_join(diet_breadth %>% 
               distinct(scientificName,diet_breadth,diet_breadth_detailed)) %>%
   mutate(diet_breadth = ifelse(is.na(diet_breadth),'generalist',diet_breadth),
-         diet_breadth_detailed = ifelse(is.na(diet_breadth_detailed),'generalist',diet_breadth_detailed))
+         diet_breadth_detailed = ifelse(is.na(diet_breadth_detailed),'generalist',diet_breadth_detailed)) %>%
+  left_join(total_obs)
 
 nrow(degree_by_fam) == nrow(globi_degree)
-with(globi_degree,boxplot(simpson~diet_breadth_detailed))
-with(globi_degree,boxplot(simpson~diet_breadth))
+with(globi_degree,boxplot(simpson_fam~diet_breadth_detailed))
+with(globi_degree,boxplot(simpson_fam~diet_breadth))
+with(globi_degree,boxplot(simpson_genus~diet_breadth))
+
+#make boxplots for the ms
+point_col = adjustcolor('cadetblue',.5)
+box_col = adjustcolor('white',0)
+loc_gen=1.2; loc_spec=1.8
+cex_lab = 1.5
+cex_axis=1.3
+
+# pdf('figures/boxplots_spec_gen_visitation.pdf',width=12)
+par(mfrow=c(1,2))
+with(globi_degree,stripchart(simpson_fam~diet_breadth,method = 'jitter',
+                             vertical=T,col=point_col,at=c(loc_gen,loc_spec),pch=16,
+                             cex.lab = cex_lab, cex.axis=cex_axis,
+                             xlab = 'bee diet breadth',ylab = 'simpson diversity of plant families visited'))
+with(globi_degree,boxplot(simpson_fam~diet_breadth,col=box_col,add=T,at=c(loc_gen,loc_spec), axes = F,boxwex=c(.35,.35)))
+
+
+with(globi_degree,stripchart(simpson_genus~diet_breadth,method = 'jitter',
+                             vertical=T,col=point_col,at=c(loc_gen,loc_spec),pch=16,
+                             cex.lab = cex_lab, cex.axis = cex_axis,
+                             xlab = 'bee diet breadth',ylab = 'simpson diversity of plant genera visited'))
+with(globi_degree,boxplot(simpson_genus~diet_breadth,col=box_col,add=T,at=c(loc_gen,loc_spec),axes=F,boxwex=c(.35,.35)))
+# dev.off()
+
+#mean simpson diversity of plants visited by specialists & gens
+(mean_simpsons = globi_degree %>% 
+    group_by(diet_breadth) %>%
+    summarize(simp_fam = mean(simpson_fam),
+              simp_genus = mean(simpson_genus)))
+
+
+(mean_simpsons$simp_fam[1]-mean_simpsons$simp_fam[2])/mean_simpsons$simp_fam[2]*100
+(mean_simpsons$simp_genus[1]-mean_simpsons$simp_genus[2])/mean_simpsons$simp_genus[2]*100
+
 
 # write_csv(globi_degree,'modeling_data/globi_degree.csv')
 
+globi_degree %>% 
+  filter(diet_breadth=='specialist') %>%
+  filter(simpson>6) %>% 
+  distinct(scientificName)
 
 
+#run the random forest model
+rf_all = randomForest(as.factor(diet_breadth) ~ degree_family + degree_genus + simpson_fam + simpson_genus + bee_family + n,data = globi_degree,importance = T)
+importance(rf_all)
+rf_all$confusion
 
+# pdf('figures/var_importance_rf.pdf',width =13)
+varImpPlot(rf_all)
+# dev.off()
 
-
-
-##old
-str(globi)
-globi %>% distinct(localityName,localityId)
-nrow(globi)
-
-globi %>% filter(is.na(decimalLatitude)) %>% distinct(sourceTaxonSpeciesName)
-
-# filter for interactions that are only in the US
-#first make a map of the us
-usa <- map_data("usa")
-usa_map <- ggplot() + geom_polygon(data = usa, 
-                                 aes(x=long, y = lat, group = group), 
-                                 fill = "white", 
-                                 color="black")+
-  coord_fixed(xlim = c(-130, -85),  ylim = c(15, 60), ratio = 1.2)
-#add the globi data to the map
-usa_map+
-  geom_point(data=globi %>% filter(!is.na(decimalLatitude) & !is.na(decimalLongitude)), aes(x=decimalLongitude, y=decimalLatitude), 
-             color = adjustcolor("red",.6), shape=16, size=1)
-
-#
-states_sf <- sf::st_as_sf(maps::map("state", plot = FALSE, fill = TRUE)) %>%
-  st_transform(roads, crs = 4269)
-usa_sf <- st_as_sf(usa,coords = c("long", "lat"),crs=4269) %>%
-  st_transform(roads, crs = 4269)
+#what threshold of observations do we need?
+what_n = seq(0,300,10) %>% purrr::map(function(threshold_n){
   
-globi_sf=globi %>% filter(!is.na(decimalLatitude) & !is.na(decimalLongitude)) %>%
-  st_as_sf(coords = c("decimalLongitude", "decimalLatitude"), # note x goes first
-                   crs = 4269)
+  # start with threshold of 20 observations
+  bigN_bees=globi_u %>% group_by(scientificName) %>% summarize(n=n()) %>% filter(n>=threshold_n)
+  globi_summ = globi_u%>% filter(scientificName %in% bigN_bees$scientificName) %>%
+    group_by(scientificName,bee_family,plant_genus,plant_family) %>% summarize(n_genus=n()) 
+  
+  #predict whether a bee is a specialist or a generalist
+  #calculate the number of plant families each bee species is observed visiting
+  total_obs = bigN_bees
+  
+  # degree_by_fam 
+  degree_by_fam = globi_summ %>% 
+    group_by(scientificName,plant_family) %>%
+    summarize(n_family = sum(n_genus)) %>%
+    summarize(degree_family = n_distinct(plant_family), 
+              degree5_family = sum(n_family >= 5), 
+              simpson_fam = diversity(n_family,index='invsimpson'))# %>%
+  
+  #calculate the number of plant genera each bee species is observed visiting
+  degree_by_genus = globi_summ %>%
+    group_by(scientificName,bee_family) %>%
+    summarize(degree_genus = n_distinct(plant_genus), 
+              degree5_genus = sum(n_genus >= 5), 
+              simpson_genus = diversity(n_genus,index='invsimpson')) 
+  
+  
+  globi_degree = degree_by_fam %>% left_join(degree_by_genus) %>% 
+    left_join(diet_breadth %>% 
+                distinct(scientificName,diet_breadth,diet_breadth_detailed)) %>%
+    mutate(diet_breadth = ifelse(is.na(diet_breadth),'generalist',diet_breadth),
+           diet_breadth_detailed = ifelse(is.na(diet_breadth_detailed),'generalist',diet_breadth_detailed)) %>%
+    left_join(total_obs) %>%
+    mutate(diet_breadth = as.factor(diet_breadth))
+  
+  #run the random forest model
+  rf_all = randomForest(as.factor(diet_breadth) ~ degree_family + degree_genus + simpson_fam + simpson_genus + bee_family + n,data = globi_degree,importance = T)
+  rf_df=data.frame(rf_all$confusion) %>% 
+    mutate(threshold_n=threshold_n)
+  rf_df$diet_breadth = row.names(rf_df)
+  row.names(rf_df) <- NULL
+  
+  return(rf_df)
 
-globi_usa <- st_intersects(globi_sf,usa_sf)
-ggplot()+geom_sf(globi_usa)
+  })
+
+
+with(what_n %>% bind_rows %>% 
+       filter(diet_breadth=='specialist'), plot(threshold_n,class.error))
+
+with(what_n %>% bind_rows %>% 
+       filter(diet_breadth=='generalist'), plot(threshold_n,class.error))
+
+# Fit gam to the data to see what sample size minimizes classification error
+library(gam)
+specialist_data = what_n %>% bind_rows %>% 
+  filter(diet_breadth=='specialist')
+generalist_data = what_n %>% bind_rows %>% 
+  filter(diet_breadth=='generalist')
+
+gam_specs = gam(class.error ~ s(threshold_n,3),data=specialist_data)
+plot(gam_specs)
+gam_gens = gam(class.error ~ s(threshold_n,3),data=generalist_data)
+plot(gam_gens)
+
+new_data <- data.frame(threshold_n = seq(0,300,by=1)) # make a data.frame of new explanatory variables
+new_data$gam_specs <- predict(gam_specs, newdata=new_data, type='response') # predict on the scale of the response
+new_data$gam_gens <- predict(gam_gens, newdata=new_data, type='response') # predict on the scale of the response
+
+x_axis_lab = 'sample size required for inclusion'
+ylims = c(30,100)
+my_cex = 1.7
+cex_pts = 1.5
+# pdf('figures/sample size results.pdf',width=12)
+par(mfrow=c(1,2),mar=c(5,5,4,2))
+plot(100-class.error*100~threshold_n,data = specialist_data,pch = 16, ylim = ylims,
+     xlab= x_axis_lab, ylab='prediction accuracy of specialists (%)',cex.lab=my_cex,cex=cex_pts)
+with(new_data,lines(100-gam_specs*100~threshold_n))
+
+plot(100-class.error*100~threshold_n,data = generalist_data, pch = 16, ylim = ylims,
+     xlab= x_axis_lab, ylab='prediction accuracy of generalists (%)',cex.lab=my_cex,cex=cex_pts)
+with(new_data,lines(100-gam_gens*100~threshold_n))
+# dev.off()
+
+# for bees on the Jarrod Fowler lists, what % visit their host plants?
+# for bees [classified as polylectic in ms dataset, what % visit their host plants?]]
+# for the globi data: categorize interaction partner as host or non-host
+# loop through the bee speices in globi_u
+# get their host plants
+# if the interaciton partner is in the family or genus then categorize it as a host
+fowler_specialists = fowler_specialists
+globi_specs = globi_summ %>% left_join(diet_breadth) %>%
+  filter(n_genus>5 & diet_breadth=='specialist') #let's exclude interactions less than or equal to five and bees with les than or equal to 20 records total
+
+
+a = globi_u %>% split(1:nrow(globi_u))
+row = a[[1]]
+empty_list = c()
+globi_host = globi_u %>% split(1:nrow(globi_u)) %>% purrr::map_dfr(function(row){
+  
+  host_plant_df = fowler_formatted %>% 
+    filter(scientificName == row$scientificName[1])
+  
+  if(unique(host_plant_df$rank =='genus')) visiting_host = row$plant_genus  %in% host_plant_df$host
+  if(unique(host_plant_df$rank =='family')) visiting_host = row$wcvp_family %in% host_plant_df$host
+  
+  return(row %>% mutate(host=visiting_host))
+
+  }) %>%
+  mutate(only_ms = scientificName %in% only_ms_specialist$scientificName)
+check_these = which(ms %>% split(.$scientificName) %>% map_lgl(function(df) nrow(df)>1))
+
+
+
+
+##what percentage of specialist bees visit their host plants?

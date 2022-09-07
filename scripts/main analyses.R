@@ -5,6 +5,7 @@ library(maps)
 library(sf)
 library(vegan)
 library(randomForest)
+library(readxl)
 
 # load the globi data
 # exclude interactions of non-US bees
@@ -31,7 +32,7 @@ generalists_fowler = c("Andrena candidiformis", "Anthidium mormonum", "Dufourea 
                        "Habropoda laboriosa", "Hesperapis ilicifoliae", "Megachile perihirta",
                        "Peponapis michelbacherorum",
                        "Perdita fieldi","Perdita obscurata",
-                       "Pseudopanurgus virginicus", "Xenoglossa kansensis")
+                       "Pseudopanurgus virginicus", "Xenoglossa kansensis","Florilegus condignus")
 
 #note: some bees on this list are duplicated, if they occur in multiple regions (eg both eastern and central usa)
 fowler <- read_csv("modeling_data/fowler_hostplants.csv") %>%
@@ -107,6 +108,7 @@ r_obj=bee_occ[[2]]
 which(bee_occ %>% map_lgl(is.null))
 nrow(r_obj)
 r_obj$query
+
 #to be conservative let's say a bee ha to have at least 5 occurrence records in the US
 american_bees_tokeep=which(bee_occ %>% purrr::map_lgl(function(r_obj) {
   
@@ -146,7 +148,8 @@ more_nonnatives = c("Hylaeus variegates", "Hylaeus albonitens",
                     "Osmia cornifrons", "Osmia taurus", "Anthophora villosula", "Apis mellifera", "Ceratina cobaltina",
                     "Ceratina dallatorreana", "Euglossa dilemma", "Plebia frontalis", "Xylocopa appendiculata")
 #still some bees left to check:
-check_native = data.frame(scientificName = american2) %>% filter(!scientificName %in% c(nonnative$scientificName,more_nonnatives))
+check_native = data.frame(scientificName = american2) %>% 
+  filter(!scientificName %in% c(nonnative$scientificName,more_nonnatives))
 
 # write_csv(check_native,'modeling_data/check_native_status.csv')
 even_more_nonnatives = read_csv('modeling_data/unknown_native_status.csv') %>%
@@ -295,16 +298,19 @@ rf_all$confusion
 varImpPlot(rf_all)
 # dev.off()
 
+threshold_n= 60
+
 #what threshold of observations do we need?
+set.seed(4435)
 what_n = seq(0,300,10) %>% purrr::map(function(threshold_n){
   
-  # start with threshold of 20 observations
+  # only include bees in the data with at least threshold_n observations
   bigN_bees=globi_u %>% group_by(scientificName) %>% summarize(n=n()) %>% filter(n>=threshold_n)
   globi_summ = globi_u%>% filter(scientificName %in% bigN_bees$scientificName) %>%
     group_by(scientificName,bee_family,plant_genus,plant_family) %>% summarize(n_genus=n()) 
   
-  #predict whether a bee is a specialist or a generalist
-  #calculate the number of plant families each bee species is observed visiting
+  # predict whether a bee is a specialist or a generalist
+  # calculate the number of plant families each bee species is observed visiting
   total_obs = bigN_bees
   
   # degree_by_fam 
@@ -333,8 +339,14 @@ what_n = seq(0,300,10) %>% purrr::map(function(threshold_n){
   
   #run the random forest model
   rf_all = randomForest(as.factor(diet_breadth) ~ degree_family + degree_genus + simpson_fam + simpson_genus + bee_family + n,data = globi_degree,importance = T)
+  
+  oob_error = rf_all$err.rate[500,][1]
   rf_df=data.frame(rf_all$confusion) %>% 
-    mutate(threshold_n=threshold_n)
+    mutate(threshold_n=threshold_n) %>%
+    mutate(oob=oob_error,n_species_all = nrow(globi_degree),
+           n_species_gen=nrow(globi_degree %>% filter(diet_breadth=='generalist')),
+           n_species_spec=nrow(globi_degree %>% filter(diet_breadth=='specialist')))
+  
   rf_df$diet_breadth = row.names(rf_df)
   row.names(rf_df) <- NULL
   
@@ -342,26 +354,42 @@ what_n = seq(0,300,10) %>% purrr::map(function(threshold_n){
 
   })
 
+#})
 
+par(mfrow=c(1,1))
 with(what_n %>% bind_rows %>% 
        filter(diet_breadth=='specialist'), plot(threshold_n,class.error))
 
 with(what_n %>% bind_rows %>% 
        filter(diet_breadth=='generalist'), plot(threshold_n,class.error))
+with(what_n %>% bind_rows %>% 
+       filter(diet_breadth=='generalist'), plot(threshold_n,oob))
+with(what_n %>% bind_rows %>% 
+       filter(diet_breadth=='generalist'), plot(threshold_n,n_species_all))
+with(what_n %>% bind_rows %>% 
+       filter(diet_breadth=='generalist'), plot(threshold_n,n_species_gen))
+with(what_n %>% bind_rows %>% 
+       filter(diet_breadth=='generalist'), plot(threshold_n,n_species_spec))
 
 # Fit gam to the data to see what sample size minimizes classification error
 library(gam)
 specialist_data = what_n %>% bind_rows %>% 
-  filter(diet_breadth=='specialist')
+  filter(diet_breadth=='specialist') %>% mutate(n_classified = generalist+specialist)
 generalist_data = what_n %>% bind_rows %>% 
-  filter(diet_breadth=='generalist')
+  filter(diet_breadth=='generalist')%>% mutate(n_classified = generalist+specialist)
 
-gam_specs = gam(class.error ~ s(threshold_n,3),data=specialist_data)
+gam()
+gam_specs = gam(class.error ~ s(threshold_n,3),data=specialist_data) ## should this be binomial??
+gam_specs = gam(class.error ~ s(threshold_n,3),family='binomial',data=specialist_data,weights=n_classified) ## should this be binomial??
+
 plot(gam_specs)
 gam_gens = gam(class.error ~ s(threshold_n,3),data=generalist_data)
+gam_gens = gam(class.error ~ s(threshold_n,3),family='binomial',weights=n_classified,data=generalist_data)
+
+
 plot(gam_gens)
 
-new_data <- data.frame(threshold_n = seq(0,300,by=1)) # make a data.frame of new explanatory variables
+new_data <- data.frame(threshold_n = seq(0,300,by=.1)) # make a data.frame of new explanatory variables
 new_data$gam_specs <- predict(gam_specs, newdata=new_data, type='response') # predict on the scale of the response
 new_data$gam_gens <- predict(gam_gens, newdata=new_data, type='response') # predict on the scale of the response
 
@@ -369,46 +397,137 @@ x_axis_lab = 'sample size required for inclusion'
 ylims = c(30,100)
 my_cex = 1.7
 cex_pts = 1.5
+the_point_col = adjustcolor('black',.8)
+the_lwd=3
 # pdf('figures/sample size results.pdf',width=12)
 par(mfrow=c(1,2),mar=c(5,5,4,2))
-plot(100-class.error*100~threshold_n,data = specialist_data,pch = 16, ylim = ylims,
+plot(100-class.error*100~threshold_n,data = specialist_data,pch = 16, ylim = ylims,col = the_point_col,
      xlab= x_axis_lab, ylab='prediction accuracy of specialists (%)',cex.lab=my_cex,cex=cex_pts)
-with(new_data,lines(100-gam_specs*100~threshold_n))
+with(new_data,lines(100-gam_specs*100~threshold_n,col="deeppink4",lwd=the_lwd))
 
-plot(100-class.error*100~threshold_n,data = generalist_data, pch = 16, ylim = ylims,
+plot(100-class.error*100~threshold_n,data = generalist_data, pch = 16, ylim = ylims, col = the_point_col,
      xlab= x_axis_lab, ylab='prediction accuracy of generalists (%)',cex.lab=my_cex,cex=cex_pts)
-with(new_data,lines(100-gam_gens*100~threshold_n))
+with(new_data,lines(100-gam_gens*100~threshold_n,col='deeppink4',lwd=the_lwd))
 # dev.off()
 
+#calculate: where is the sample size that minimizes prediction error?
+min_gen_index = which(new_data$gam_gens == min(new_data$gam_gens))
+min_spec_index = which(new_data$gam_specs == min(new_data$gam_specs))
+
+#lines of code below give the give the sample size for inclusion that minimizes prediction error
+new_data$threshold_n[min_gen_index] # for generalists
+new_data$threshold_n[min_spec_index] # for specialists
+
+what_n %>% bind_rows %>% filter(threshold_n  == round(new_data$threshold_n[min_spec_index]))
+what_n %>% bind_rows %>% filter(threshold_n  == 130)
+
+what_n[[min_gen_index]]
+
+
 # for bees on the Jarrod Fowler lists, what % visit their host plants?
-# for bees [classified as polylectic in ms dataset, what % visit their host plants?]]
 # for the globi data: categorize interaction partner as host or non-host
 # loop through the bee speices in globi_u
 # get their host plants
 # if the interaciton partner is in the family or genus then categorize it as a host
-fowler_specialists = fowler_specialists
-globi_specs = globi_summ %>% left_join(diet_breadth) %>%
-  filter(n_genus>5 & diet_breadth=='specialist') #let's exclude interactions less than or equal to five and bees with les than or equal to 20 records total
+#fowler_specialists = #fowler[fowler$diet_breadth == 'specialist',]$scientificName
 
+# let's exclude bees with fewer than 20 interactions in the globi dataset
+bigN_bees
+globi_specs = globi_summ %>% 
+  #filter(scientificName %in% bigN_bees$scientificName) %>%
+  left_join(diet_breadth) %>%
+  filter(diet_breadth=='specialist') %>%
+  filter(n_genus >=5)##let's exclude interactions wiht fewer than 5 records
 
-a = globi_u %>% split(1:nrow(globi_u))
-row = a[[1]]
+# double check that specialist bees have either farmily as host rank or genus
+# but not both
+which(fowler_formatted %>% split(.$scientificName) %>%
+  purrr::map_lgl(function(df) n_distinct(df$host_rank)>1))
+
+a = globi_specs %>% split(1:nrow(globi_specs))
+row = a[[188]]
 empty_list = c()
-globi_host = globi_u %>% split(1:nrow(globi_u)) %>% purrr::map_dfr(function(row){
+globi_host = globi_specs %>% split(1:nrow(globi_specs)) %>% 
+  purrr::map_dfr(function(row){
   
-  host_plant_df = fowler_formatted %>% 
-    filter(scientificName == row$scientificName[1])
+  (host_plant_df = fowler_formatted %>% 
+    filter(scientificName == row$scientificName[1]))
   
-  if(unique(host_plant_df$rank =='genus')) visiting_host = row$plant_genus  %in% host_plant_df$host
-  if(unique(host_plant_df$rank =='family')) visiting_host = row$wcvp_family %in% host_plant_df$host
+  if(unique(host_plant_df$host_rank) =='genus') visiting_host = row$plant_genus  %in% host_plant_df$host
+  if(unique(host_plant_df$host_rank) =='family') visiting_host = row$plant_family %in% host_plant_df$host
+  if(unique(host_plant_df$host_rank) =='tribe') visiting_host = row$plant_family =='Asteraceae'
   
   return(row %>% mutate(host=visiting_host))
 
-  }) %>%
-  mutate(only_ms = scientificName %in% only_ms_specialist$scientificName)
-check_these = which(ms %>% split(.$scientificName) %>% map_lgl(function(df) nrow(df)>1))
-
-
-
+  }) 
 
 ##what percentage of specialist bees visit their host plants?
+globi_host %>%
+  group_by(scientificName,host) %>%
+  summarize(sum_n=sum(n_genus)) 
+
+host_fidelity=globi_host %>%
+  group_by(scientificName) %>%
+  summarize(sum_n=sum(n_genus[host])/sum(n_genus),sample_size = sum(n_genus)) 
+#pdf('figures/histogram_visits_hosts_specialists-nothreshold.pdf')
+par(mfrow=c(1,1))
+hist(host_fidelity$sum_n*100,main='pollen specialists - visits to host plants',
+     xlab='% of visits to host plants',col=point_col,cex.lab=cex_lab)
+# dev.off()
+host_fidelity %>% filter(sum_n<.3)
+
+with(host_fidelity,plot(sample_size,sum_n))
+
+#load the discrepancies data 
+#(tells us which bees have been found with non-host pollen in their pollen load)
+discrepancies = read_csv('modeling_data/discrepancies_fowler_ms.csv')
+head(discrepancies)
+questionable = discrepancies %>% 
+  filter(`This ms` =='generalist' &  Fowler=='specialist')
+questionable$scientificName[questionable$scientificName %in% host_fidelity$scientificName]
+
+#load the missouri state data
+ms <- read_xlsx('modeling_data/DATA_pollen-diet-breadth_list_12-5-21_ALR-cleaned.xlsx', sheet = 3) %>%
+  rename_all(tolower) %>%
+  mutate(scientificName = paste0(genus, ' ',sub('.*\\. ','',species))) %>%
+  select(scientificName,everything()) %>%
+  rename(diet_breadth=`redefined pollen diet breadth`) %>%
+  mutate(pollen_host = `pollen hosts`) %>%
+  filter(!is.na(pollen_host))
+
+ms_check = ms %>% filter(scientificName %in% fowler$scientificName)
+
+#we just want the bees with primary pollen data - get rid of anything wiht just two refs
+# bc will be fowler and droege and the species description ref in fowler and droege (not a primary pollen source)
+a_string = ms_check$references[1]
+more_sources_i = which(ms_check$references %>% purrr::map_lgl(function(a_string){
+  length(strsplit(a_string,';')[[1]]) !=2
+}))
+
+#as a first approximation = lets compare these to bees on 'questionable' vec
+ms_check[more_sources_i,] %>% select(scientificName, references)
+
+not_questionable = ms_check[more_sources_i,] %>% 
+  filter(!scientificName %in% questionable$scientificName)
+not_questionable$scientificName[not_questionable$scientificName %in% host_fidelity$scientificName]
+also_questionable = c("Andrena erythronii")
+
+bees_w_data = host_fidelity %>%
+  mutate(specialist_type = ifelse(scientificName %in% not_questionable$scientificName,'true',NA))%>%
+  mutate(specialist_type = ifelse(scientificName %in% c(questionable$scientificName,also_questionable), 'facultative',specialist_type)) %>%
+  filter(!is.na(specialist_type))
+
+pdf('figures/preliminary_facultative_boxplot.pdf')
+with(bees_w_data,boxplot(sum_n~specialist_type,names=c('true','false'),ylab = 'proportion of visits to host plant',xlab = 'found with nonhost pollen'))
+dev.off()
+
+#format data and look up primary pollen sources
+look_up = ms %>%
+  mutate(specialist_type = ifelse(scientificName %in% not_questionable$scientificName,'true',NA))%>%
+  mutate(specialist_type = ifelse(scientificName %in% c(questionable$scientificName,also_questionable), 'facultative',specialist_type)) %>%
+  filter(!is.na(specialist_type)) %>%
+  filter(scientificName %in% host_fidelity$scientificName) %>%
+  select(scientificName, specialist_type, diet_breadth,pollen_host,references)
+
+# write_csv(look_up,'modeling_data/look_at_primary_data.csv')
+look_up

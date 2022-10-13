@@ -19,50 +19,25 @@ library(tidyverse)
 library(data.table)
 library(readxl)
 library(Taxonstand)
+library(vroom)
 
 
 ```
 
 ```{r, echo = False}
 options(max.print=1000000)
-interactions_b <- read.csv('modeling_data/interactions_dup.csv')
-ms <- read_xlsx('modeling_data/DATA_pollen-diet-breadth_list_12-5-21_ALR.xlsx', sheet = 3) %>%
-  rename_all(tolower) %>%
-  mutate(scientificName = paste0(genus, ' ',sub('.*\\. ','',species))) %>%
-  select(scientificName,everything()) %>%
-  rename(diet_breadth=`redefined pollen diet breadth`)
+interactions_b <- vroom('modeling_data/interactions_dup.csv')
 fowler <- read_csv("modeling_data/fowler_hostplants.csv") 
-
-#who are the specialsits?
-#let's say specialist the MS list and everything on fowler list that's missing from ms list
-ms_oligo = ms$scientificName[ms$diet_breadth %in% c('Oligolectic','Monolectic')]
-add_from_fowler = unique(fowler$scientificName[!fowler$scientificName %in% ms$scientificName])
-specialists = c(ms_oligo,add_from_fowler)
 
 for (c in colnames(interactions_b)) {
   interactions_b[[c]] <-  tolower(interactions_b[[c]])
 }
 
-# for (c in colnames(interactions_b)) {
-#   interactions_b[[c]] <-  tolower(interactions_b[[c]])
-# }
-```
-
-
-```{r}
-#how many species in the missouri state data are in the globi data?
-head(interactions_b)
-n_distinct(interactions_b$sourceTaxonName[interactions_b$sourceTaxonName  %in% tolower(ms$scientificName)]) #800 species in the ms data
-
-#how many are specialists
-ms_specialists = ms %>% filter(diet_breadth != 'Polylectic')
-n_distinct(interactions_b$sourceTaxonName[interactions_b$sourceTaxonName  %in% tolower(ms_specialists$scientificName)]) #503 specialist species 
-
-#how many are generalists
-ms_generalists = ms %>% filter(diet_breadth == 'Polylectic')
-n_distinct(interactions_b$sourceTaxonName[interactions_b$sourceTaxonName  %in% tolower(ms_generalists$scientificName)]) #296 generalist species 
 
 ```
+
+
+
 
 ```{r}
 interactions_b[1:5,1:5]
@@ -85,9 +60,11 @@ interactions_reformat = interactions_b %>%
          plant_family = capitalize(targetTaxonFamilyName), 
          plant_genus = capitalize(targetTaxonGenusName),
          plant_species = capitalize(targetTaxonName)) %>%
-  filter(scientificName != '' & plant_family !='' & plant_genus != "")
+  filter(scientificName != '' & plant_family !='' & plant_genus != "")%>%
+   filter(!targetTaxonRank %in% c('species',"genus"))
 
 #
+str(interactions_reformat)
 
 plant_df = interactions_reformat %>%
   distinct(plant_species)
@@ -101,7 +78,8 @@ check_names = read_csv('modeling_data/plant_list_name_update.csv')
 check_names %>% filter(Taxonomic.status != 'Accepted') %>% 
   select(Taxon,New.Genus,New.Species)
 
-tpl_formatted = check_names %>% rename(plant_species = Taxon) %>% 
+tpl_formatted = check_names %>% 
+  rename(plant_species = Taxon) %>% 
   mutate(accepted_name = ifelse(!is.na(New.Species),paste(New.Genus,New.Species),New.Genus) ) %>%
   mutate(accepted_name = ifelse(is.na(accepted_name), plant_species, accepted_name)) %>%
   select(plant_species,accepted_name)
@@ -111,13 +89,41 @@ tpl_formatted %>% filter(is.na(accepted_name))
 #add accepted_name column to plant_df
 interactions_updated = interactions_reformat %>% 
   group_by(scientificName,bee_family,plant_species,plant_family) %>%
-  summarize(n=n()) %>%
+  summarize(n=n(),n_source_citations = n_distinct(sourceCitation),n_ref_citations = n_distinct(referenceCitation)) %>%
   ungroup %>%
   left_join(tpl_formatted) %>%
   select(-plant_species) %>%
   rename(plant_species = accepted_name) %>%
-  mutate(plant_genus = sub(" .*","",plant_species))
+  mutate(plant_genus = sub(" .*","",plant_species))%>%
+  mutate(plant_genus = ifelse(plant_genus == "Ipomaea","Ipomoea",plant_genus))
 
+head(interactions_updated)
+
+
+#let's also reformat so that the data re not grouped (each row a unique record)
+nrow(interactions_reformat %>% left_join(tpl_formatted)) == nrow(interactions_reformat)
+
+str(interactions_reformat)
+globi_names = colnames(interactions_reformat)
+globi_names[grepl('Sex',globi_names)]
+
+each_interaction = interactions_reformat %>% 
+  select(scientificName,bee_family,plant_species,plant_family,interactionTypeName,sourceTaxonRank, targetTaxonRank,referenceCitation,sourceCitation,decimalLongitude,decimalLatitude,sourceSexId,sourceSexName,targetSexId,targetSexName) %>%
+  left_join(tpl_formatted) %>%
+  select(-plant_species) %>%
+  rename(plant_species = accepted_name) %>%
+  mutate(plant_genus = sub(" .*","",plant_species))%>%
+  mutate(plant_genus = ifelse(plant_genus == "Ipomaea","Ipomoea",plant_genus))
+
+
+interactions_updated %>%
+  select(scientificName,n,n_source_citations,n_ref_citations,plant_species) %>%
+  filter(n>5)
+
+# write_csv(interactions_reformat %>% filter(scientificName == "Agapostemon angelicus" & plant_species =="Helianthus annuus") %>% distinct(sourceCitation,referenceCitation),'look_at_refs.csv')
+
+# write_csv(interactions_updated,'modeling_data/globi_names_updated.csv')
+# write_csv(each_interaction,'modeling_data/globi_occ_names_updated.csv')
 ```
 
 Let's do some reformatting
@@ -125,7 +131,8 @@ Let's do some reformatting
 
 globi_summ = interactions_updated %>%
   group_by(scientificName, plant_genus, plant_family,bee_family) %>%
-  summarize(n_genus = sum(n)) %>% ungroup()
+  summarize(n_genus = sum(n),genus_source_citations=sum(n_source_citations)) %>% #this treats interactions of different plant species within the same genus as separate citations
+  ungroup()
 
 
 ```
@@ -143,16 +150,19 @@ n_distinct(globi_5n$scientificName[!globi_5n$scientificName %in% ms_specialists$
 Calculate number of interaction partners
 
 ```{r}
+
 #calculate the number of plant families each bee species is observed visiting
 total_obs = globi_summ %>% group_by(scientificName) %>% summarize(n=sum(n_genus))
 
 # degree_by_fam 
 degree_by_fam = globi_summ %>% group_by(scientificName,plant_family) %>%
-  summarize(n_family = sum(n_genus)) %>%
+  summarize(n_family = sum(n_genus),n_source_citations=sum(genus_source_citations)) %>% # %>%this treats genera within the same fam, from the same source as separate sources
   left_join(total_obs) %>%
-  mutate(freq_squared = (n_family/n)^2) %>% group_by(scientificName,n) %>%
+  mutate(freq_squared = (n_family/n)^2) %>% 
+  group_by(scientificName,n) #%>%
   summarize(degree_family = n_distinct(plant_family), 
-            degree5_family = sum(n_family >= 5), weighted_degree_fam = sum(freq_squared))# %>%
+            degree5_family = sum(n_family >= 5), weighted_degree_fam = sum(freq_squared),
+            simpson_family_citations=sum(n_source_citations),simpson())
  
 
 #calculate the number of plant genera each bee species is observed visiting
@@ -166,7 +176,6 @@ degree_by_genus = globi_summ %>%
            
 globi_degree = degree_by_fam %>% left_join(degree_by_genus) %>%
   mutate(diet_breadth = ifelse(scientificName %in% specialists,'specialist','generalist'))
-getwd()
 # write_csv(globi_degree,'modelign_data/globi_degree.csv')
 
 ```

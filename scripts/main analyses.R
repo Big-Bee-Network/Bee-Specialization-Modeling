@@ -20,11 +20,13 @@ library(readxl)
 
 #load pollen data
 pollen_fidelity = read_csv("modeling_data/prop_host_pollen.csv")
+
 # load the globi data
 # this is a file with the globi records and plant names are updated (though not plant families)
 globi_r = read_csv('modeling_data/globi_occ_names_updated.csv')
 globi_r %>% filter(sourceTaxonRank=='variety') %>% distinct(scientificName)
 data.frame(globi_r %>% filter(is.na(sourceTaxonRank)) %>% distinct(scientificName))
+
 
 #also load the fowler data
 #some of these bees have different characterizations despite having the same pollen hosts in both databases
@@ -45,6 +47,10 @@ fowler <- read_csv("modeling_data/fowler_hostplants.csv") %>%
 
 specialists = fowler[fowler$diet_breadth=='specialist',]$scientificName
 fowler_formatted = read_csv('modeling_data/fowler_formatted.csv')
+
+##
+# View(globi_r %>% distinct(sourceCitation,referenceCitation))
+
 
 #some bees have different host plants on the east/west/central lists - we need to make their diet breadths consistent
 check_me = fowler %>% distinct(scientificName,diet_breadth,diet_breadth_detailed)
@@ -220,7 +226,7 @@ bigN_bees=globi_u %>%
 globi_summ = globi_u %>% 
   filter(scientificName %in% bigN_bees$scientificName) %>%
   group_by(scientificName,bee_family,plant_genus,plant_family) %>% 
-  summarize(n_genus=n(),n_citations=n_distinct(sourceCitation)) 
+  summarize(n_genus=n(),n_citations=n_distinct(referenceCitation)) 
 
 #predict whether a bee is a specialist or a generalist
 #calculate the number of plant families each bee species is observed visiting
@@ -296,14 +302,17 @@ with(globi_degree,boxplot(simpson_genus~diet_breadth,col=box_col,add=T,at=c(loc_
 
 globi_degree %>% 
   filter(diet_breadth=='specialist') %>%
-  filter(simpson>6) %>% 
+  filter(simpson_fam>6) %>% 
   distinct(scientificName)
 
 
 #run the random forest model
-rf_all = randomForest(as.factor(diet_breadth) ~ degree_family + degree_genus + simpson_fam + simpson_genus + bee_family + n + simpson_citation_genus+smpson_citation_fam,data = globi_degree,importance = T)
+rf_all = randomForest(as.factor(diet_breadth) ~ degree_family + degree_genus + simpson_fam + simpson_genus + bee_family + n ,data = globi_degree,importance = T)
+rf_w_citations = randomForest(as.factor(diet_breadth) ~ degree_family + degree_genus + simpson_fam + simpson_genus + bee_family + n + simpson_citation_genus+simpson_citation_fam,data = globi_degree,importance = T)
+
 importance(rf_all)
 rf_all$confusion
+globi_degree %>% filter(scientificName == 'Andrena erigeneae')
 
 
 # pdf('figures/var_importance_rf.pdf',width =13)
@@ -318,6 +327,18 @@ rf_roc = roc(as.factor(globi_degree$diet_breadth),rf_all$votes[,2])
 plot(rf_roc)
 # dev.off()
 auc(rf_roc)
+
+rf_roc_cits = roc(as.factor(globi_degree$diet_breadth),rf_w_citations$votes[,2])
+rf_roc = roc(as.factor(globi_degree$diet_breadth),rf_all$votes[,2])
+
+# pdf('figures/roc_curves.pdf')
+par(mfrow=c(1,1))
+plot(rf_roc)
+plot(rf_roc_cits,col=adjustcolor('deepskyblue3',.8),add=T)
+legend("bottomright",c('citations excluded','citations included'),
+       lty=1, box.lty=0,cex = 1,
+       col=c('black',adjustcolor('deepskyblue3',.8)))
+# dev.off()
 
 #what does roc plot look like with larger threshold?
 #only include bees in the data with at least 150 observations
@@ -361,14 +382,14 @@ globi_degree150 = degree_by_fam %>% left_join(degree_by_genus) %>%
   mutate(diet_breadth = as.factor(diet_breadth))
 
 #run the random forest model
-rf_150 = randomForest(as.factor(diet_breadth) ~ degree_family + degree_genus + simpson_fam + simpson_genus + bee_family + n+ simpson_citation_genus+smpson_citation_fam,data = globi_degree150,importance = T)
+rf_150 = randomForest(as.factor(diet_breadth) ~ degree_family + degree_genus + simpson_fam + simpson_genus + bee_family + n+ simpson_citation_genus+simpson_citation_fam,data = globi_degree150,importance = T)
 
-par(mfrow=c(1,2))
-rf_roc150 = roc(as.factor(globi_degree$diet_breadth),rf_150$votes[,2])
-plot(rf_roc,main = '20 obs needed')
-plot(rf_roc150,main='150 obs needed')
-auc(rf_roc)
-auc(rf_roc150)
+# par(mfrow=c(1,2))
+# rf_roc150 = roc(as.factor(globi_degree$diet_breadth),rf_150$votes[,2])
+# plot(rf_roc,main = '20 obs needed')
+# plot(rf_roc150,main='150 obs needed')
+# auc(rf_roc)
+# auc(rf_roc150)
 
 #what threshold of observations do we need?
 set.seed(4435)
@@ -485,6 +506,7 @@ my_cex = 1.7
 cex_pts = 1.5
 the_point_col = adjustcolor('black',.8)
 the_lwd=3
+
 # pdf('figures/sample size results.pdf',width=12)
 par(mfrow=c(1,2),mar=c(5,5,4,2))
 plot(100-class.error*100~threshold_n,data = specialist_data,pch = 16, ylim = ylims,col = the_point_col,
@@ -496,18 +518,34 @@ plot(100-class.error*100~threshold_n,data = generalist_data, pch = 16, ylim = yl
 with(new_data,lines(100-gam_gens*100~threshold_n,col='deeppink4',lwd=the_lwd))
 # dev.off()
 
+
+
+
+
 #calculate: where is the sample size that minimizes prediction error?
 min_gen_index = which(new_data$gam_gens == min(new_data$gam_gens))
 min_spec_index = which(new_data$gam_specs == min(new_data$gam_specs))
 
 #lines of code below give the give the sample size for inclusion that minimizes prediction error
-new_data$threshold_n[min_gen_index] # for generalists
-new_data$threshold_n[min_spec_index] # for specialists
+(n_needed_gens = new_data$threshold_n[min_gen_index])# for generalists
+(n_needed_specs = new_data$threshold_n[min_spec_index]) # for specialists
+
 
 what_n %>% bind_rows %>% filter(threshold_n  == round(new_data$threshold_n[min_spec_index]))
 what_n %>% bind_rows %>% filter(threshold_n  == 130)
 
 what_n[[min_gen_index]]
+
+#make a figure with just the specialists
+# pdf('figures/specialist_samplesize.pdf')
+par(mfrow=c(1,1),mar=c(5,5,4,2))
+plot(100-class.error*100~threshold_n,data = specialist_data,pch = 16, ylim = ylims,col = the_point_col,
+     xlab= x_axis_lab, ylab='prediction accuracy of specialists (%)',cex.lab=my_cex,cex=cex_pts)
+with(new_data,lines(100-gam_specs*100~threshold_n,col="deeppink4",lwd=the_lwd))
+abline(v = n_needed_specs,lty=2)
+# dev.off()
+#
+
 
 
 # for bees on the Jarrod Fowler lists, what % visit their host plants?
@@ -529,7 +567,8 @@ globi_specs = globi_summ_NoSizeFilter %>%
   #filter(scientificName %in% bigN_bees$scientificName) %>%
   left_join(diet_breadth) %>%
   filter(diet_breadth=='specialist') %>%
-  filter(n_genus >=5)##let's exclude interactions wiht fewer than 5 records
+  filter(n_genus >=5) %>%
+  mutate(bee_plant = paste(scientificName,plant_genus))##let's exclude interactions wiht fewer than 5 records
 
 # double check that specialist bees have either farmily as host rank or genus
 # but not both
@@ -553,10 +592,31 @@ globi_host = globi_specs %>% split(1:nrow(globi_specs)) %>%
 
   }) 
 
-##what percentage of specialist bees visit their host plants?
-globi_host %>%
-  group_by(scientificName,host) %>%
-  summarize(sum_n=sum(n_genus)) 
+#lets load bees in the globi host data that are specialists at the genus level
+# get a list of their hosts in order to search and see if they produce nectar or not
+globi_genus_specs = globi_host %>% 
+  filter(diet_breadth_detailed=='genus_specialist') %>%
+  distinct(scientificName) 
+get_nectar = fowler_formatted %>% filter(scientificName %in% globi_genus_specs$scientificName) %>%
+  distinct(host,family)
+# write_csv(get_nectar,'modeling_data/get_nectar.csv')
+
+
+library(readxl)
+plants_nectar <- read_excel("modeling_data/plants_nectar.xlsx") %>%
+  filter(nectar_status != 'unknown' & !is.na(nectar_status))
+head(plants_nectar)
+
+
+
+
+## what percentage of specialist bees visit their host plants?
+
+
+head(globi_host)
+globi_host %>% 
+  filter(scientificName == 'Andrena erigeniae') 
+
 
 host_fidelity=globi_host %>%
   group_by(scientificName) %>%
@@ -569,6 +629,49 @@ hist(host_fidelity$sum_n*100,main='pollen specialists - visits to host plants',
 host_fidelity %>% filter(sum_n<.3)
 
 with(host_fidelity,plot(sample_size,sum_n))
+
+host_fidelity %>% 
+  filter(host %in% plants_nectar)
+
+#need to 1) get genus level specs in data what there hosts are
+# 2) join with plants_nectar to get the host plant's nectar status
+# 3) join with host fidelity data
+# 4) plot nectar status of host plant vs host fidelity
+
+#get bee species that are specialists and what there host plants are
+head(globi_genus_specs)
+globi_genus_specs %>% filter(scientificName == "Andrena arabis")
+head(plants_nectar)
+head(globi_genus_specs)
+globi_host %>% filter(host) %>% filter(scientificName %in% globi_genus_specs$scientificName) %>% group_by(scientificName) %>% summarize(n=n()) %>%
+  filter(n !=1)
+globi_host %>% filter(scientificName == "Andrena asteris")
+plants_nectar %>% rename(plant_genus = host) %>%
+  left_join(globi_host %>% filter(host)) %>%
+  filter(is.na(scientificName))
+#Andrena rehni - specialsit on chesnut; doesn't have enough records with this species to show up in the data
+## how to deal with species that have 0%visits to host plant (based on the threshold we're using)
+globi_genus_specs %>% filter()
+nectar_fidelity = plants_nectar %>% 
+  rename(plant_genus = host) %>%
+  left_join(globi_genus_specs) %>%#join to get genus level specs in data what there hosts are
+  left_join(host_fidelity, by = 'scientificName')
+nectar_fidelity %>% filter(scientificName == 'Andrena erigeniae')
+with(nectar_fidelity, boxplot(sum_n~nectar_status))
+
+nectar_fidelity %>% filter(scientificName == 'Andrena erigeniae')
+nectar_fidelity %>% filter(sum_n<.2)
+
+# look at the data for Andrena erigeniae 
+# View(globi_r %>% 
+#   filter(scientificName == "Andrena erigeniae"))
+globi_r %>% filter(scientificName == 'Andrena erigeniae') %>%
+  group_by(referenceCitation) %>%
+  summarize(n=n()) %>% arrange(desc(n))
+
+check_me = globi_r %>% filter(scientificName == 'Andrena erigeniae')
+nrow(check_me)
+n_distinct(check_me$plant_genus)
 
 #does pollen fidelity predict visitation fidelity
 host_pollen = pollen_fidelity %>% 
@@ -586,11 +689,160 @@ comp_pollen_visit = host_pollen %>%
 
 # pdf('figures/visitfidelity_pollenfidelity.pdf')
 par(mar=c(5,5,4,2))
-# with(comp_pollen_visit,plot(sum_n~mean_prop_host_pollen,cex=1.3, pch=16,col=adjustcolor('black',.7),
+with(comp_pollen_visit,plot(sum_n~mean_prop_host_pollen,cex=1.3, pch=16,col=adjustcolor('black',.7),
                             cex.lab = 1.5,
                             ylab='proportion of visits to host plants in GLOBI',
                             xlab = 'mean proportion of host pollen in pollen load'))
-dev.off()
+# dev.off()
+
+
+#look at difference in host fidelity in males vs females
+head(globi_host)
+globi_host_u = globi_host %>% distinct(scientificName,plant_genus,plant_family,host)
+#get male v female for the globi data
+globi_r %>% 
+  filter(!is.na(sourceSexName))
+globi_r %>% 
+  filter(!is.na(targetSexName))
+globi_r %>% 
+  filter(!is.na(sourceSexId))
+globi_r %>% 
+  filter(!is.na(targetSexId))
+
+str(globi_r)
+# View(globi_r %>% 
+#   filter(!is.na(sourceSexName)) %>%
+#     left_join(sex_codes%>% rename(sourceSexName=sex_name)) %>% 
+#     filter(sex != 'female')  %>% 
+#   distinct(referenceCitation,sourceCitation))
+
+sex_codes
+
+data.frame(globi_r %>% 
+  filter(!is.na(sourceSexName)) %>%
+  group_by(scientificName,sourceSexName) %>%
+  summarize(n=n()))
+
+sexed = globi_r %>% 
+  filter(!is.na(sourceSexName)) %>%
+  group_by(scientificName,plant_family,plant_genus,sourceSexName) %>%
+  summarize(n=n())
+sex_codes  = data.frame(sourceSexName = unique(sexed$sourceSexName)) %>%
+  mutate(sex = ifelse(grepl('queen',sourceSexName),'queen',sourceSexName)) %>%
+  mutate(sex = ifelse(sourceSexName %in% c('fem','female','femlae','female paratype','female holo',"1 female"),'female',sex)) %>%
+  mutate(sex = ifelse(sourceSexName %in% c('male','male paratype','1 male'),'male',sex)) %>%
+  mutate(sex = ifelse(grepl('worker',sourceSexName),'female',sex)) %>%
+  mutate(sex = ifelse(grepl('adult',sourceSexName),'unknown',sex)) %>%
+  mutate(sex = ifelse(grepl('unknown',sourceSexName),'unknown',sex)) %>%
+  mutate(sex = ifelse(sourceSexName %in% c('u','undetermined','male and female','1 adult'),'unknown',sex)) %>%
+  mutate(sex = ifelse(sourceSexName=='f','female',sex)) %>%
+  mutate(sex = ifelse(sourceSexName=='m','male',sex))
+
+
+globi_summ_bySex = globi_u %>% 
+  filter(!is.na(sourceSexName)) %>%
+  left_join(sex_codes) %>%
+  group_by(scientificName,bee_family,plant_genus,plant_family,sex) %>% 
+  summarize(n_genus=n(),n_citations=n_distinct(sourceCitation)) 
+
+
+
+globi_specs_sexed = globi_summ_bySex %>% 
+  left_join(diet_breadth) %>%
+  filter(diet_breadth=='specialist') %>%
+  mutate(bee_plant = paste(scientificName,plant_genus)) %>%
+  filter(bee_plant %in% globi_specs$bee_plant) ##let's exclude interactions with fewer than 5 records (at the species level though - so use globi_spec df to figure out what that is)
+
+globi_host_bySex = globi_specs_sexed %>% split(1:nrow(globi_specs_sexed)) %>% 
+  purrr::map_dfr(function(row){
+    
+    (host_plant_df = fowler_formatted %>% 
+       filter(scientificName == row$scientificName[1]))
+    
+    if(unique(host_plant_df$host_rank) =='genus') visiting_host = row$plant_genus  %in% host_plant_df$host
+    if(unique(host_plant_df$host_rank) =='family') visiting_host = row$plant_family %in% host_plant_df$host
+    if(unique(host_plant_df$host_rank) =='tribe') visiting_host = row$plant_family =='Asteraceae'
+    
+    return(row %>% mutate(host=visiting_host))
+    
+  }) 
+
+
+hosts_by_sex = globi_host_bySex %>%
+  filter(!is.na(host)) %>%
+  group_by(scientificName,sex) %>%
+  summarize(sum_n=sum(n_genus[host])/sum(n_genus),sample_size = sum(n_genus)) 
+
+
+#first just plot as box plots
+with(hosts_by_sex %>% filter(sex != 'unknown'),boxplot(sum_n~sex))
+
+# then only include bees with pairs of male and female 
+# with sample size above some threshold
+
+paired_sexes=names(which(hosts_by_sex %>% filter(sample_size>20 & sex !='unknown') %>% split(.$scientificName) %>% map_lgl(function(df)nrow(df)==2) ))
+with(hosts_by_sex %>% 
+  filter(scientificName %in% paired_sexes & sex !='unknown'),boxplot(sum_n~sex))
+
+#pair males and females
+hosts_by_sex_bigN=hosts_by_sex %>% 
+  filter(scientificName %in% paired_sexes & sex !='unknown')
+
+a=hosts_by_sex_bigN %>%
+  split(.$scientificName)
+df=a[[1]]
+sex_differences = hosts_by_sex_bigN %>%
+  split(.$scientificName) %>%
+  map_dbl(function(df){
+    sex_diff = df[df$sex=='female',]$sum_n-df[df$sex=='male',]$sum_n
+    return(sex_diff)
+    })
+hist(sex_differences)
+
+(sexed_wide = hosts_by_sex_bigN %>% select(-sample_size) %>%
+  pivot_wider(values_from=sum_n,names_from=sex,values_fill=0))
+
+#make a paired box-plot
+par(mfrow=c(1,1))
+with(hosts_by_sex_bigN,stripchart(sum_n~sex,
+                             vertical=T,col=point_col,at=c(loc_gen,loc_spec),pch=16,
+                             cex.lab = cex_lab, cex.axis=cex_axis,
+                             xlab = 'bee diet breadth',ylab = 'host fidelity'))
+for(i in 1:nrow(sexed_wide)){segments(loc_gen, sexed_wide$female[i], loc_spec, sexed_wide$male[i],lty=2,col=adjustcolor('black',.3))}
+with(hosts_by_sex_bigN,boxplot(sum_n~sex,col=box_col,add=T,at=c(loc_gen,loc_spec), axes = F,boxwex=c(.35,.35)))
+
+
+
+# dev.off()
+
+
+hosts_by_sex_bigN %>% filter(sum_n<.1)
+globi_host_bySex %>% filter(scientificName=="Melissodes tristis" & sex=='male')
+globi_host_bySex %>% filter(scientificName=="Melissodes tristis" & sex=='female')
+# View(globi_r %>% filter(scientificName=="Melissodes tristis") %>%
+#   group_by(plant_family,referenceCitation,sourceCitation) %>%
+#   summarize(n=n()))
+
+globi_r %>% filter(plant_family=="Compositae")
+globi_r %>% 
+  filter(!grepl("aceae",plant_family)) %>% 
+  distinct(plant_genus,plant_family)
+str(globi_r)
+
+#run a paired t-test
+t.test(Pair(female,male)~1, data = sexed_wide)
+
+#just look at males/females for bees in my data
+(female_comp=hosts_by_sex_bigN %>%
+  filter(scientificName %in%comp_pollen_visit$scientificName & sex=='female') %>%
+  left_join(comp_pollen_visit %>% select(scientificName,mean_prop_host_pollen,pollen_n),by='scientificName'))
+
+par(mar=c(5,5,4,2))
+with(female_comp,plot(sum_n~mean_prop_host_pollen,cex=1.3, pch=16,col=adjustcolor('black',.7),
+                            cex.lab = 1.5,
+                            ylab='proportion of visits to host plants in GLOBI',
+                            xlab = 'mean proportion of host pollen in pollen load'))
+# 
 
 globi_r %>%
   filter(scientificName=='Andrena erythronii')

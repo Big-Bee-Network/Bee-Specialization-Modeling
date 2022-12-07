@@ -638,7 +638,6 @@ ms_all_discrepancies = ms_discrepancies %>%
       }
     }
     data.frame(scientificName = df$scientificName[1],ms_hosts =host_vec)
-    
   })
 
 head(discrepancies)
@@ -647,4 +646,7 @@ discrepancies_final_final = discrepancies_final %>%
   left_join(ms_all_discrepancies) %>%
   rename(`This ms`=This_ms,`Hosts (this ms)`=ms_hosts)
 nrow(discrepancies_final) == nrow(discrepancies_final_final)
-# write_csv(discrepancies_final_final,'modeling_data/discrepancies_fowler_ms.csv')
+write_csv(discrepancies_final_final,'modeling_data/discrepancies_fowler_ms.csv')
+
+# save MS data cleaned file - just usa bees
+# write_csv(ms_simplified %>% bind_rows(gen_simplified),'modeling_data/MS_data_simplified.csv')

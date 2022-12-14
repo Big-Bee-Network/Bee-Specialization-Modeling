@@ -1,5 +1,4 @@
-# Bee-Specialization-Modeling
-Leveraging Large Biological Interaction Data to Quantify Plant Specialization by Bees
+# Predicting Specialist Bee Species
 
 General workflow for running the analyses:
 

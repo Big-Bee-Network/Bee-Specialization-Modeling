@@ -373,15 +373,30 @@ globi_degree125 %>%
 #run the random forest model
 set.seed(20)
 rf_all = randomForest(as.factor(diet_breadth) ~ degree_family + degree_genus + simpson_fam + simpson_genus + bee_family + n ,
-                      data = globi_degree125,importance = T)
-set.seed(20)
-rf_all2 = randomForest(as.factor(diet_breadth) ~ degree_family + degree_genus + simpson_fam + simpson_genus + bee_family + n ,
-                     data = globi_degree125,importance = T)
+                      data = globi_degree125,importance = T,nperm=1)
+species_probs = data.frame(predict(rf_all,type='prob'))
+
+#any specialists on our list that have low probability of being specialists?
+head(globi_degree125)
+prob_output=globi_degree125 %>% bind_cols(species_probs)
+with(prob_output,boxplot(generalist~diet_breadth))
+
+data.frame(prob_output %>% 
+             filter(diet_breadth=='specialist'&specialist<.5) %>%
+             select(scientificName,simpson_fam,specialist))
+
+#let's see if species with <0.5 prob of being specialists have higher simpson div of plant fams visited
+with(prob_output %>%
+  filter(diet_breadth =='specialist') %>%
+  mutate(low_prob = specialist<0.5),boxplot(low_prob,simpson_fam))
+with(prob_output %>% filter(diet_breadth=='specialist'),
+     plot(specialist,simpson_fam))
+head(globi_degree125)
+View(globi_degree125)
 
 rf_w_citations = randomForest(as.factor(diet_breadth) ~ degree_family + degree_genus + simpson_fam + simpson_genus + bee_family + n + simpson_citation_genus+simpson_citation_fam,data = globi_degree125,importance = T)
 
 rf_all
-rf_all2
 importance(rf_all)
 rf_all$confusion
 globi_degree %>% filter(scientificName == 'Andrena erigeneae')
@@ -417,27 +432,38 @@ varImpPlot(rf_all)
 # dev.off()
 
 imp = data.frame(rf_all$importance)
+imp = data.frame(importance(rf_all)) 
 imp$predictor = rownames(imp)
+imp$labels = c('plant families visited',"plant genera visited","plant families visited \n(simpson)",
+               "plant genera visited \n(simpson)","bee family","sample size")
 row.names(imp) <- NULL
-imp_long = imp %>% select(predictor, everything()) %>%
-  pivot_longer(cols = c(generalist,specialist),names_to = c("diet_breadth"),values_to = "importance")
+(imp_long = imp %>% select(predictor,labels,everything()) %>%
+  pivot_longer(cols = c(generalist,specialist),names_to = c("diet_breadth"),values_to = "importance") %>%
+  arrange(diet_breadth,importance))
+imp_long %>% filter(diet_breadth=='generalist')
 
-(imp_plot = ggplot(imp_long,aes(y = importance,x=reorder(predictor,importance),fill=factor(diet_breadth)))+
+#plot the data so that the variables are in order of increasing importance for predicting specialists
+spec_importance = imp_long %>% filter(diet_breadth=='specialist')
+labels_factor = factor(spec_importance$labels)
+labels_factor = ordered(labels_factor,levels = spec_importance$labels)
+reorder_df = data.frame(labels = spec_importance$labels,labels_factor = labels_factor[labels_factor])
+imp_long_ordered = imp_long %>% left_join(reorder_df,by='labels')
+
+(imp_plot = ggplot(imp_long_ordered,aes(y = importance,x=labels_factor,fill=factor(diet_breadth)))+
   geom_dotplot(binaxis = "y", stackgroups = TRUE,binpositions = 'all')+ 
   theme_classic()+
-  theme(axis.text.x = element_text(angle = 45,vjust=0.5),
+  theme(axis.text.x = element_text(angle = 45,vjust=0.9,hjust=.9,size=11),
         axis.title=element_text(size=14),legend.text=element_text(size=11))+
   #theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))+
   #scale_y_discrete(name = "Variable importance")#+
-  scale_x_discrete(name = "predictor variable",
-                   labels=c("bee family",'plant families visited',"plant genera visited", "sample size",
-                            "plant families visited \n(simpson)","plant genera visited \n(simpson)"))+
+  scale_x_discrete(name = "predictor variable")+
   scale_y_continuous(name='importance')+  
   guides(fill=guide_legend(title="diet breadth")))
   
 
+pdf('figures/rf_graphs.pdf',width=12)
 grid.arrange(cm,imp_plot,ncol=2)
-  
+ dev.off()
 
 library(pROC) 
 rf_roc = roc(as.factor(globi_degree125$diet_breadth),rf_all$votes[,2])
@@ -463,6 +489,23 @@ legend("bottomright",c('citations excluded','citations included'),
        col=c('black',adjustcolor('deepskyblue3',.8)))
 # dev.off()
 
+#plot difference in sample size between specialsits and generalists
+with(globi_degree125,boxplot(log(n)~diet_breadth))
+#difference in means? medians?
+mean(globi_degree125[globi_degree125$diet_breadth=='generalist',]$n);median(globi_degree125[globi_degree125$diet_breadth=='generalist',]$n)
+
+mean(globi_degree125[globi_degree125$diet_breadth=='specialist',]$n);median(globi_degree125[globi_degree125$diet_breadth=='specialist',]$n)
+
+
+#incidence of specialists by bee family
+globi_degree125 %>% group_by(bee_family) %>% 
+  summarize(prop_specialists = mean(diet_breadth=="specialist"),
+            prop_generalists = mean(diet_breadth == 'generalist')) %>%
+  arrange(prop_specialists)
+n_specs = sum(globi_degree125$diet_breadth=='specialist')
+globi_degree125 %>%
+  filter(diet_breadth=='specialist') %>%
+  group_by(bee_family) %>% summarize(n=n(),prop=n()/nrow(.))
 
 #what threshold of observations do we need?
 set.seed(4435)
@@ -549,6 +592,12 @@ with(what_n %>% bind_rows %>%
        filter(diet_breadth=='specialist'), plot(threshold_n,auc,xlab='sample size required for inclusion'))
 # dev.off()
 
+# change in proportion specialists as sample size required for inclusion changes?
+with(what_n %>% bind_rows %>% 
+      filter(diet_breadth=='specialist') %>%
+      mutate(prop_specialists = n_species_spec/(n_species_spec+n_species_gen)), 
+    plot(threshold_n,prop_specialists,xlab='sample size required for inclusion'))
+#
 # Fit gam to the data to see what sample size minimizes classification error
 library(gam)
 specialist_data = what_n %>% 
@@ -593,14 +642,27 @@ min_spec_index = which(new_data$gam_specs == min(new_data$gam_specs))
 (n_needed_gens = new_data$threshold_n[min_gen_index])# for generalists
 (n_needed_specs = new_data$threshold_n[min_spec_index]) # for specialists
 
+#accuracy rate at predicting specialists when all bees re included
+new_data %>% filter(gam_specs <.3) %>% summarize(max = max(threshold_n),min=min(threshold_n))
+1-new_data[new_data$threshold_n==0,]$gam_specs
+1-new_data[new_data$threshold_n==300,]$gam_specs
+
+1-new_data[new_data$threshold_n==300,]$gam_gens
+1-new_data[new_data$threshold_n==0,]$gam_gens
+
+new_data[new_data$threshold_n==300,]
+new_data[new_data$threshold_n==0,]
 
 what_n %>% bind_rows %>% filter(threshold_n  == round(new_data$threshold_n[min_spec_index]))
-what_n %>% bind_rows %>% filter(threshold_n  == 130)
+what_n %>% bind_rows %>% filter(threshold_n  == 120)
 
 what_n[[min_gen_index]]
 
+what_n[[1]] %>% mutate(n_species  = n_species_gen + n_species_spec)
+what_n %>% bind_rows %>% filter(threshold_n  == 120) %>% mutate(n_species  = n_species_gen + n_species_spec)
 
-# pdf('figures/sample size results.pdf',width=12)
+
+# pdf('figures/sample size results-2.pdf',width=14)
 par(mfrow=c(1,3),mar=c(5,5,4,2))
 plot(100-class.error*100~threshold_n,data = specialist_data,pch = 16, ylim = ylims,col = the_point_col,
      xlab= x_axis_lab, ylab='prediction accuracy of specialists (%)',cex.lab=my_cex,cex=cex_pts)
@@ -612,7 +674,7 @@ plot(100-class.error*100~threshold_n,data = generalist_data, pch = 16, ylim = yl
 with(new_data,lines(100-gam_gens*100~threshold_n,col='deeppink4',lwd=the_lwd))
 
 plot(auc~threshold_n,data = generalist_data, pch = 16,  col = the_point_col,
-     xlab= x_axis_lab, ylab='model AUC',cex.lab=my_cex,cex=cex_pts,ylim=c(0,1))
+     xlab= x_axis_lab, ylab='AUC',cex.lab=my_cex,cex=cex_pts,ylim=c(0,1))
 with(new_data,lines(gam_auc~threshold_n,col='deeppink4',lwd=the_lwd))
 # dev.off()
 

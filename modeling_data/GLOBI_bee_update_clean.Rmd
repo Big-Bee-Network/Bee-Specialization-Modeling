@@ -9,9 +9,13 @@ source:         https://www.globalbioticinteractions.org/about
 
 ## Read data
 ```{r}
-library(data.table)
+#library(data.table)
+#df <- fread( 'https://zenodo.org/record/4460654/files/interactions.csv.gz')
+library(vroom)
+library(tidyverse)
 
-df <- fread( 'https://zenodo.org/record/4460654/files/interactions.csv.gz')
+df = vroom("all_bee_data.tsv") 
+
 ```
 
 
@@ -26,11 +30,8 @@ bee_source_df <- df %>% filter(sourceTaxonFamilyName %in% b_families, targetTaxo
 # Plant as source, Bee as target
 plant_source_df = df %>% filter(sourceTaxonKingdomName == 'Plantae', targetTaxonFamilyName %in% b_families) 
 
-
 # Flip target/source for above df
-
 colnames(plant_source_df) <- as.character(lapply(colnames(plant_source_df), textclean::swap, pattern1 = 'source', pattern2 = 'target'))
-
 plant_source_df <- plant_source_df %>% dplyr::rename(sourceCitation = targetCitation, sourceNamespace = targetNamespace, 
                                               sourceArchiveURI = targetArchiveURI, sourceDOI = targetDOI,
                                               sourceLastSeenAtUnixEpoch = targetLastSeenAtUnixEpoch)
@@ -44,7 +45,6 @@ plant_source_df <- plant_source_df %>% dplyr::rename(sourceCitation = targetCita
 # Combine without dropping duplicates
 # The filtering method guarantees two disjoint data frames
 interactions_dup = rbind(bee_source_df, plant_source_df) 
-
 # Combine and drop duplicates
 interactions = rbind(bee_source_df, plant_source_df) %>% unique()
 ```
@@ -52,7 +52,7 @@ interactions = rbind(bee_source_df, plant_source_df) %>% unique()
 
 # Export to csv file
 ```{r}
-readr::write_csv(interactions_dup, "interactions_dup.csv")
+readr::write_csv(interactions, "interactions-14dec2022.csv")
 ```
 
 

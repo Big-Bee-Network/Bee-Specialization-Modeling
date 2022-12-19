@@ -25,52 +25,15 @@ pollen_fidelity = read_csv("modeling_data/prop_host_pollen.csv")
 
 # load the globi data
 # this is a file with the globi records and plant names are updated (though not plant families)
-globi_r = read_csv('modeling_data/globi_occ_names_updated.csv')
+globi_r = read_csv('modeling_data/globi_occ_names_updated-19dec2022.csv')
 globi_r %>% filter(sourceTaxonRank=='variety') %>% distinct(scientificName)
 data.frame(globi_r %>% filter(is.na(sourceTaxonRank)) %>% distinct(scientificName))
 
 
 #also load the fowler data
-#some of these bees have different characterizations despite having the same pollen hosts in both databases
-# this is because fowler considers bees to be specialists if they use pollen from genera in two different families
-#and we don't. we're going to remove these bees from the fowler list (and won't consider them discrepancies)
-generalists_fowler = c("Andrena candidiformis", "Anthidium mormonum", "Dufourea cuprea",
-                       "Habropoda laboriosa", "Hesperapis ilicifoliae", "Megachile perihirta",
-                       "Peponapis michelbacherorum",
-                       "Perdita fieldi","Perdita obscurata",
-                       "Pseudopanurgus virginicus", "Xenoglossa kansensis","Florilegus condignus")
-
-#note: some bees on this list are duplicated, if they occur in multiple regions (eg both eastern and central usa)
-fowler <- read_csv("modeling_data/fowler_hostplants.csv") %>%
-  mutate(diet_breadth = ifelse(scientificName %in% generalists_fowler,'generalist','specialist')) %>%
-  mutate(host_plant_rank = ifelse(grepl('aceae',host_plant),'family','genus')) %>%
-  mutate(diet_breadth_detailed = ifelse(host_plant_rank == 'family' & diet_breadth =='specialist','family_specialist','genus_specialist')) %>%
-  mutate(diet_breadth_detailed = ifelse(diet_breadth=='generalist','generalist',diet_breadth_detailed))
-
-specialists = fowler[fowler$diet_breadth=='specialist',]$scientificName
-fowler_formatted = read_csv('modeling_data/fowler_formatted.csv')
-
-##
-# View(globi_r %>% distinct(sourceCitation,referenceCitation))
-
-
-#some bees have different host plants on the east/west/central lists - we need to make their diet breadths consistent
-check_me = fowler %>% distinct(scientificName,diet_breadth,diet_breadth_detailed)
-dupes = check_me$scientificName[duplicated(check_me$scientificName)]
-check_me %>% filter(scientificName %in% dupes) %>% arrange(scientificName)
-fowler %>% filter(scientificName %in% dupes) %>% arrange(scientificName)
-change_me = check_me %>% filter(scientificName %in% dupes) %>% arrange(scientificName) %>%
-  split(.$scientificName) %>% purrr::map_dfr(function(df){
-    new_db='family_specialist'
-    db_broad = 'specialist'
-    #if('family_generalist'%in% df$diet_breadth_detailed) new_db <- 'family_specialist'
-    if('generalist' %in% df$diet_breadth_detailed) {new_db <- 'generalist'; db_broad <- 'generalist'}
-    
-    data.frame(scientificName = df$scientificName[1],diet_breadth = db_broad,diet_breadth_detailed = new_db)
-  })
-
-diet_breadth = check_me %>% filter(!scientificName %in% dupes) %>% bind_rows(change_me)
-
+diet_breadth = read_csv('modeling_data/bee_diet_breadth.csv')
+specialists = diet_breadth[diet_breadth$diet_breadth=='specialist',]$scientificName
+fowler_formatted = read_csv('modeling_data/fowler_formatted-19dec2022.csv')
 
 # Let's exclude interactions of non-US bees
 

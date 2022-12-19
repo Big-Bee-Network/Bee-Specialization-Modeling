@@ -1,7 +1,8 @@
 rm(list = ls())
 library(tidyverse)
 library(readxl)
-
+library(kewr)
+library(furrr)
 
 # Research Qs this R script will answer:
 # What percentage of oligolectic bees visit non-host plants (where visit == at least 5 visits)
@@ -86,12 +87,19 @@ with(prop_nonhost,plot(prop_nonhost_visits~total_n))
 
 with(prop_nonhost,boxplot(prop_nonhost_visits~only_ms))
 
+# format the box-plot graph:
+# pdf('figures/compare_fowler_ms.pdf')
+with(prop_nonhost %>% mutate(on_fowler = factor(!only_ms,levels = c(T,F))),
+     boxplot(prop_nonhost_visits~on_fowler, ylab = 'proportion of bees visiting non-hosts',
+                          xlab = 'On Fowler list'))
+# dev.off()
 
-#is there a difference between bees on fowler list vs MS list?
+
+# is there a difference between bees on fowler list vs MS list?
 only_ms_specialist$scientificName
 
-##old:
-#note: for fowler df, bees on this list are duplicated if they occur in multiple regions (eg both east and central america)
+## old:
+# note: for fowler df, bees on this list are duplicated if they occur in multiple regions (eg both east and central america)
 fowler <- read_csv("modeling_data/fowler_hostplants.csv") 
 globi <- read_csv('modeling_data/globi_names_updated.csv')
 

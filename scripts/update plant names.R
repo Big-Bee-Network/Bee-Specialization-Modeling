@@ -40,15 +40,15 @@ plant_df = interactions_reformat %>%
   distinct(plant_species)
 test_me = plant_df$plant_species
 
-# #load world flora online data
-# wfo_data = vroom("/Volumes/Seagate/globi_13dec2022/data/WFO_Backbone/classification.txt") %>%
-#   mutate(scientificName2 = paste(genus,specificEpithet,infraspecificEpithet)) %>% # add a field with a scientific name for subspecies
-#   mutate(scientificName3 = paste(genus,specificEpithet))
-
 #load world flora online data
-wfo_data = vroom("modeling_data/WFO_Backbone/classification.txt") %>%
+wfo_data = vroom("/Volumes/Seagate/globi_13dec2022/data/WFO_Backbone/classification.txt") %>%
   mutate(scientificName2 = paste(genus,specificEpithet,infraspecificEpithet)) %>% # add a field with a scientific name for subspecies
   mutate(scientificName3 = paste(genus,specificEpithet))
+
+# #load world flora online data
+# wfo_data = vroom("modeling_data/WFO_Backbone/classification.txt") %>%
+#   mutate(scientificName2 = paste(genus,specificEpithet,infraspecificEpithet)) %>% # add a field with a scientific name for subspecies
+#   mutate(scientificName3 = paste(genus,specificEpithet))
 
 
 #these species were not in wfo, and I looked them up manually in catalog of life or itis:
@@ -170,9 +170,7 @@ wfo_unsure %>% filter(old_name == "Taraxacum vulgare")
 # 5) for all synonyms:
 #   filter wfo_filtered to just be these species (filter so  that none are also accepted)
 
-wfo_filtered2 %>%
-  filter(scientificName %in% not_accepted) %>%
-  distinct(taxonomicStatus)
+
 # View(wfo_filtered2 %>% filter(taxonomicStatus=="SYNONYM")) #doubtful and unchecked don't have accepted usage-ids, so we'll just go with those
 # View(wfo_filtered2 %>% filter(taxonID=="wfo-4000035688"))
 # View(wfo_filtered2 %>% filter(taxonomicStatus=="SYNONYM" & is.na(acceptedNameUsageID)))
@@ -198,8 +196,8 @@ wfo_name_update = wfo_accepted %>% bind_rows(wfo_syn_update) %>% bind_rows(wfo_u
   rename(old_plant = old_name)
 
 #double check all plants are in the df and that there are no duplicates
-wfo_name_update[duplicated(wfo_name_update$old_name),]
-the_plants[!the_plants %in% wfo_name_update$old_name]
+wfo_name_update[duplicated(wfo_name_update$old_plant),]
+the_plants[!the_plants %in% wfo_name_update$old_plant]
 
 # make data frame with ‘globi_name’ and name in wfo
 # update the globi data once more, with the new names
@@ -215,4 +213,5 @@ nrow(interactions_updated_final) == nrow(interactions_updated)
 with(interactions_updated_final,mean(plant_species != old_plant)) #about 5%
 
 #save the file as a csv
+# write_csv(interactions_updated_final,"modeling_data/globi_occ_names_updated-19dec2022.csv")
 

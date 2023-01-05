@@ -11,7 +11,7 @@ General workflow for running the analyses:
 
    a. bees names are aligned using Discover Life, ITIS, and NCBI (in that order) and the [name alignment template](https://github.com/globalbioticinteractions/name-alignment-template)
 
-    b. JT Miller's [tutorial](https://big-bee-network.github.io/name-alignment-workshop/04-name-alignment/index.html)
+    b. JT Miller's [tutorial](https://big-bee-network.github.io/name-alignment-workshop/04-name-alignment/index.html) for using the name alignment template
 
 
 9) Run analyses using scripts/main_analyses.R)

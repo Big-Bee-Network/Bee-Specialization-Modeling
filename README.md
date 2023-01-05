@@ -9,9 +9,9 @@ General workflow for running the analyses:
 5. Format and update name of list of specialist bees using scripts/format_fowler_hosts.R
 6. Update bee names and filter to just be native US bees using scripts/update bee names.R 
 
-   bees names are aligned using Discover Life, ITIS, and NCBI (in that order) and the [name alignment template](https://github.com/globalbioticinteractions/name-alignment-template)
+   a. bees names are aligned using Discover Life, ITIS, and NCBI (in that order) and the [name alignment template](https://github.com/globalbioticinteractions/name-alignment-template)
 
-    JT Miller's [tutorial](https://big-bee-network.github.io/name-alignment-workshop/04-name-alignment/index.html)
+    b. JT Miller's [tutorial](https://big-bee-network.github.io/name-alignment-workshop/04-name-alignment/index.html)
 
 
 9) Run analyses using scripts/main_analyses.R)

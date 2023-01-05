@@ -8,11 +8,6 @@ General workflow for running the analyses:
 4. Update plant names using scripts/update plant names.R
 5. Format and update name of list of specialist bees using scripts/format_fowler_hosts.R
 6. Update bee names and filter to just be native US bees using scripts/update bee names.R 
-7. And another item.
-
-   You can have properly indented paragraphs within list items. Notice the blank line above, and the leading spaces (at least one, but we'll use three here to also align the raw Markdown).
-
-   To have a line break without a paragraph, you will need to use two trailing spaces.⋅⋅
 
    bees names are aligned using Discover Life, ITIS, and NCBI (in that order) and the [name alignment template](https://github.com/globalbioticinteractions/name-alignment-template)
 

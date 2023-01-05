@@ -2,7 +2,7 @@
 
 General workflow for running the analyses:
 
-1. Download full GloBI interaction dataset from [zenodo](https://zenodo.org/record/7348355#.Y5owy-zMIcQ).
+1. Download full GloBI interaction dataset from [Zenodo](https://zenodo.org/record/7348355#.Y5owy-zMIcQ).
 2. Filter the dataset to just include bee data using scripts/format_bee_data.sh
 3. Reformat the data using modeling_data/GLOBI_bee_update_clean.Rmd
 4. Update plant names using scripts/update plant names.R
@@ -14,4 +14,4 @@ General workflow for running the analyses:
     b. JT Miller's [tutorial](https://big-bee-network.github.io/name-alignment-workshop/04-name-alignment/index.html) for using the name alignment template
 
 
-9) Run analyses using scripts/main_analyses.R)
+9) Run analyses using scripts/main_analyses.R

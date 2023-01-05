@@ -13,7 +13,7 @@ General workflow for running the analyses:
 
  ⋅JT Miller's [tutorial] (https://big-bee-network.github.io/name-alignment-workshop/04-name-alignment/index.html)
  
- [I'm an inline-style link](https://www.google.com)
+ [tutorial](https://big-bee-network.github.io/name-alignment-workshop/04-name-alignment/index.html)
 
 
 9) Run analyses using scripts/main_analyses.R)

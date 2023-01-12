@@ -8,7 +8,7 @@ General workflow for running the analyses:
 4. Update plant names with WFO using scripts/update plant names.R
 5. Format and update name of list of specialist bees using scripts/format_fowler_hosts.R
 
-   a. bees names are aligned using the [name alignment template](https://github.com/globalbioticinteractions/name-alignment-template) (see below)
+   a. bees names are aligned using the [name alignment template](https://github.com/globalbioticinteractions/name-alignment-template)
 
    b. plant names are aligned using WFO
 

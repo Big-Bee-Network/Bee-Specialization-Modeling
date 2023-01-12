@@ -1,6 +1,7 @@
 rm(list=ls())
 library(tidyverse)
 library(furrr)
+library(vroom)
 
 #load world flora online data for getting accepted species names
 wfo_data = vroom("/Volumes/Seagate/globi_13dec2022/data/WFO_Backbone/classification.txt") %>%
@@ -189,6 +190,48 @@ fowler_formatted = hosts_long %>% rename(old_plant = new_host) %>%
   select(scientificName,host,host_family,host_rank,name_source,old_name,everything())
 
 nrow(fowler_formatted) == nrow(hosts_long)
-write_csv(fowler_formatted,'modeling_data/fowler_formatted.csv')
 
+#next we need to update the bee names
+#do this using name alignment template
 
+#save file for name alignment on github
+fowler_names_toAlign = data.frame(scientificName = unique(fowler_formatted$scientificName))
+# write_csv(fowler_names_toAlign,'modeling_data/fowler_toAlign.csv')
+
+#upload the output of the name alignment
+fowler_aligned = vroom("modeling_data/fowler_names-aligned.csv")%>%
+  mutate(source = ifelse(grepl("ITIS",alignedExternalId),'itis',NA)) %>% #add column with source
+  mutate(source = ifelse(grepl("discover",alignedExternalId),'discoverlife',source)) %>%#add column with source
+  mutate(source = ifelse(grepl("NCBI",alignedExternalId),'ncbi',source)) #add column with source
+
+#update names - use DL first, followed by itis, followed by col
+#first filter just be discover life bees
+dl_bees = fowler_aligned %>% filter(source=='discoverlife') %>% distinct(providedName,alignedName)
+#add itis bees that are not in the discover life list
+itis_bees = fowler_aligned %>% filter(source=='itis' & !providedName %in% dl_bees$providedName)%>% distinct(providedName,alignedName)
+#add col bees that are not in the discover life list or the itis list
+ncbi_bees = fowler_aligned %>% filter(source=='ncbi' & !providedName %in% c(dl_bees$providedName,itis_bees$providedName))%>% distinct(providedName,alignedName)
+
+name_update = rbind(dl_bees,itis_bees,ncbi_bees)
+
+#check no duplicates
+name_update[duplicated(name_update$providedName),]
+
+#any bees missing?
+(missing = fowler_names_toAlign %>% filter(!scientificName %in% name_update$providedName)) #these are spelling mistakes
+add_me = data.frame(providedName = missing$scientificName,alignedName = c('Andrena osmioides','Melissodes robustior'))
+
+name_update2 = name_update %>% bind_rows(add_me) 
+
+#now update teh fowler dataframes
+fowler_formatted2=fowler_formatted %>% 
+  rename(old_bee_name = scientificName) %>%
+  left_join(name_update2 %>% rename(old_bee_name = providedName,scientificName = alignedName))
+diet_breadth2 = diet_breadth %>% 
+  rename(old_bee_name = scientificName) %>%
+  left_join(name_update2 %>% rename(old_bee_name = providedName,scientificName = alignedName))
+  
+
+# write_csv(fowler_formatted2,'modeling_data/fowler_formatted.csv')
+# write_csv(diet_breadth2,'modeling_data/bee_diet_breadth.csv')
+# 

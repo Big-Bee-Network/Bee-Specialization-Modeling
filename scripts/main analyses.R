@@ -20,15 +20,14 @@ library(gridExtra)
 # if we change the sample size how does this change?
 
 
-#load pollen data
-pollen_fidelity = read_csv("modeling_data/prop_host_pollen.csv")
-
 # load the globi data
 # this is a file with the globi records and plant names are updated (though not plant families)
 globi_r = read_csv('modeling_data/globi_occ_names_updated-19dec2022.csv')
 globi_r %>% filter(sourceTaxonRank=='variety') %>% distinct(scientificName)
 data.frame(globi_r %>% filter(is.na(sourceTaxonRank)) %>% distinct(scientificName))
 
+#this data file has bee and plant names updated, and only american bees
+globi = vroom('modeling_data/globi_american_native_bees.csv')
 
 #also load the fowler data
 diet_breadth = read_csv('modeling_data/bee_diet_breadth.csv')
@@ -136,46 +135,7 @@ american_sp_keep = c(american1, american2)[!c(american1,american2) %in% introduc
 globi_usa = globi_r %>% filter(scientificName %in% american_sp_keep) 
 
 
-# update the plant family names using world checklist for vascular plants
-# get_fams = unique(globi_usa$plant_genus) %>% future_map(function(sciname){
-#   output = search_wcvp(sciname, filters=c("families", "accepted"),limit = 1)
-#   output_df = tidy(output)
-#   
-#   if(nrow(output_df) !=0){
-#     return_df = data.frame(genus = sciname,family = output_df$family)
-#     
-#   }
-#   else{
-#     output = search_wcvp(sciname, filters=c("families"),limit = 1)
-#     df=tidy(output)
-#     
-#     if(nrow(df) !=0){
-#       new_output_df = df$synonymOf[[1]]
-#       return_df = data.frame(genus = sciname,family = new_output_df$family)
-#       
-#     }else{
-#       return_df = data.frame(genus=sciname,family = NA)
-#     }
-#   }
-# }) %>% bind_rows
-# saveRDS(get_fams,'modeling_data/globi_plant_fams.rds')
-get_fams = readRDS("modeling_data/globi_plant_fams.rds")
-
-#get_fams manually for things that are in the world vascular checklist (note some are tribes not genera)
-globi_r %>% filter(plant_genus =='Sarracenia') %>% select(referenceCitation)
-globi_r %>% filter(plant_genus =='Geniculiflora') %>% select(referenceCitation)
-
-(still_need_fams = get_fams %>% filter(is.na(family)))
-add_fam_info = data.frame(genus = c('Heliantheae',"Dithyraea","Sarracenia","Senecioneae","Eupatorieae","Geniculiflora","Pseudoveronica","Althea","Eleagnus"),
-                          family = c('Asteraceae',"Brassicaceae","Sarraceniaceae",'Asteraceae',"Asteraceae",NA,'Plantaginaceae','Malvaceae',"Elaeagnaceae"))
-
-get_fams_final = get_fams %>% 
-  filter(!is.na(family)) %>% filter(genus %in% add_fam_info$genus==F) %>% 
-  bind_rows(add_fam_info)
-globi_u=globi_usa %>% 
-  left_join(get_fams_final %>%
-              rename(plant_genus = genus, wcvp_family=family)) 
-nrow(globi_u) == nrow(globi_usa)
+globi_u=globi_usa 
 
 #how many records total in our data
 paste0('our data has ', nrow(globi_u),' records total, with ', n_distinct(globi_u$scientificName),' bee species, and ',
@@ -355,7 +315,7 @@ with(prob_output %>%
 with(prob_output %>% filter(diet_breadth=='specialist'),
      plot(specialist,simpson_fam))
 head(globi_degree125)
-View(globi_degree125)
+# View(globi_degree125)
 
 rf_w_citations = randomForest(as.factor(diet_breadth) ~ degree_family + degree_genus + simpson_fam + simpson_genus + bee_family + n + simpson_citation_genus+simpson_citation_fam,data = globi_degree125,importance = T)
 
@@ -424,9 +384,9 @@ imp_long_ordered = imp_long %>% left_join(reorder_df,by='labels')
   guides(fill=guide_legend(title="diet breadth")))
   
 
-pdf('figures/rf_graphs.pdf',width=12)
+# pdf('figures/rf_graphs.pdf',width=12)
 grid.arrange(cm,imp_plot,ncol=2)
- dev.off()
+# dev.off()
 
 library(pROC) 
 rf_roc = roc(as.factor(globi_degree125$diet_breadth),rf_all$votes[,2])
@@ -619,18 +579,18 @@ new_data[new_data$threshold_n==0,]
 what_n %>% bind_rows %>% filter(threshold_n  == round(new_data$threshold_n[min_spec_index]))
 what_n %>% bind_rows %>% filter(threshold_n  == 120)
 
-what_n[[min_gen_index]]
+# what_n[[min_gen_index]]
 
 what_n[[1]] %>% mutate(n_species  = n_species_gen + n_species_spec)
 what_n %>% bind_rows %>% filter(threshold_n  == 120) %>% mutate(n_species  = n_species_gen + n_species_spec)
 
 
-# pdf('figures/sample size results-2.pdf',width=14)
+# pdf('figures/sample size results-newdata.pdf',width=14)
 par(mfrow=c(1,3),mar=c(5,5,4,2))
 plot(100-class.error*100~threshold_n,data = specialist_data,pch = 16, ylim = ylims,col = the_point_col,
      xlab= x_axis_lab, ylab='prediction accuracy of specialists (%)',cex.lab=my_cex,cex=cex_pts)
 with(new_data,lines(100-gam_specs*100~threshold_n,col="deeppink4",lwd=the_lwd))
-abline(v = n_needed_specs,lty=2)
+# abline(v = n_needed_specs,lty=2)
 
 plot(100-class.error*100~threshold_n,data = generalist_data, pch = 16, ylim = ylims, col = the_point_col,
      xlab= x_axis_lab, ylab='prediction accuracy of generalists (%)',cex.lab=my_cex,cex=cex_pts)
@@ -641,9 +601,20 @@ plot(auc~threshold_n,data = generalist_data, pch = 16,  col = the_point_col,
 with(new_data,lines(gam_auc~threshold_n,col='deeppink4',lwd=the_lwd))
 # dev.off()
 
+#make plot of number of specialist bees included in the analysis
+# par(mfrow=c(1,1))
+pdf('figures/sample_size_change.pdf')
+plot(n_classified~threshold_n,data=specialist_data,pch = 16,  col = the_point_col,
+     xlab= x_axis_lab, ylab='number of specialist species included in the anlaysis',cex.lab=1.2,cex=cex_pts)
+# dev.off()
 
-
-
+#plot with sample size change as a percentage
+specialist_data$percent_spec_secies_classified = 100*specialist_data$n_classified/max(specialist_data$n_classified)
+par(mfrow=c(1,1))
+pdf('figures/sample_size_change_percent.pdf')
+plot(percent_spec_secies_classified~threshold_n,data=specialist_data,pch = 16,  col = the_point_col,
+     xlab= x_axis_lab, ylab='% of specialist species included in the anlaysis',cex.lab=1.2,cex=cex_pts)
+dev.off()
 
 
 #make a figure with just the specialists
@@ -708,44 +679,7 @@ globi_host = globi_specs %>% split(1:nrow(globi_specs)) %>%
   })   #add 0 for bees that haven't visited their host plant
 globi_host %>% filter(scientificName %in% dupes) %>% distinct(diet_breadth_detailed)
 
-# got rid of the >5 criterion so commenting this out
-# # these bees below are in the globi_specs data but not at >5 interactions visiting their host plants
-# host_fidelity_0bees = unique(globi_specs$scientificName[!globi_specs$scientificName %in% globi_host[globi_host$host,]$scientificName])
-# fowler_formatted %>% filter(host =='Arabis')
-# 'Andrena arabis' %in%  globi_host[globi_host$host,]$scientificName
-# 
-# globi_specs %>% filter(scientificName =='Andrena arabis')
-# 
-# sci_name = host_fidelity_0bees[2]
-# add_these = host_fidelity_0bees %>% purrr::map_dfr(function(sci_name){
-#   
-#   #for this, let's use one of the rows for that bee from the data_specs df 
-#   get_bee_data = globi_specs %>% filter(scientificName==sci_name) 
-#   bee_row = get_bee_data[1,]
-# 
-#   # need to replace plant_genus (if applicable) and plant_family with that of the host plant
-#   # first, get the host info for the bee species
-#   (host_info = fowler_formatted %>% filter(scientificName == bee_row$scientificName)) # %>% distinct())
-#   
-#   # replace plant family with that of the host plant
-#   bee_row$plant_family <- host_info$family[1]
-#   
-#   # replace plant_genus (if applicable) with that of the host plant
-#   if(host_info$host_rank[1] == 'family'){
-#     bee_row$plant_genus <- NA
-#   }else{
-#     bee_row$plant_genus <- host_info$host[1]
-#   }
-#   
-#   # set n_genus and n_citations to zero
-#   bee_row$n_genus <- 0; bee_row$n_citations <- 0
-#   
-#   #set host equal to true
-#   bee_row$host <- T
-#   
-#   return(bee_row)
-#   })
-# 
+
 # globi_host2 = globi_host %>% bind_rows(add_these)
 globi_host2 = globi_host
 

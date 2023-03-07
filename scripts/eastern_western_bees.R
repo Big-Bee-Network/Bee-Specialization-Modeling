@@ -22,6 +22,7 @@ my_dir2 = '/Volumes/Seagate/gbif_usa/'
 (my_paths1 = paste0(my_dir,list.files(my_dir1)))
 (my_paths2 = paste0(my_dir2,list.files(my_dir2)))
 my_paths = c(my_paths1, my_paths2)
+#
 
 #combine the paths together:
 bees = my_paths %>% map_dfr(function(path){

@@ -1,17 +1,11 @@
 rm(list=ls())
 library(tidyverse)
 library(vroom)
-library(maps)
 library(sf)
 library(readxl)
-library(furrr)
-library(rgbif)
 library(sp)
 library(tigris)
 
-#if vphylomaker not installed:
-#devtools::install_github("jinyizju/V.PhyloMaker")
-library(V.PhyloMaker)
 
 
 # load the globi data

@@ -19,6 +19,14 @@ not_in_wfo = data.frame(fowler = c('Salazaria'),
                         family = c("Lamiaceae"),
                         source = c('col'))
 
+#chesshire et al data for aligning names
+chesshire1 = read_csv('modeling_data/Chesshire2023_nameAlignment-geoUpdate.csv') 
+#for final names that also aren't in provided name: add them
+add_chesshire = data.frame(providedName = chesshire1$finalName[!chesshire1$finalName %in% chesshire1$providedName]) %>%
+  mutate(finalName = providedName)
+
+chesshire = bind_rows(chesshire1,add_chesshire)
+
 # fowler considers bees to be specialists if they use pollen from genera in two different families
 #and we don't. we're going to remove these bees from the fowler list (and won't consider them discrepancies)
 generalists_fowler = c("Andrena candidiformis", "Anthidium mormonum", "Dufourea cuprea",
@@ -191,9 +199,31 @@ fowler_formatted = hosts_long %>% rename(old_plant = new_host) %>%
 
 nrow(fowler_formatted) == nrow(hosts_long)
 
-#next we need to update the bee names
-#do this using name alignment template
+#next we need to update the bee names using chesshire's methods
+fowler_names_toAlign = data.frame(providedName = unique(fowler_formatted$scientificName))
 
+slist = fowler_names_toAlign$providedName
+slist[!slist %in% chesshire$providedName]
+
+folwer_updated = fowler_names_toAlign %>%
+  left_join(chesshire) %>%
+  mutate(finalName = ifelse(is.na(finalName),providedName,finalName)) %>% #for bees not in chesshire et al, just use the provided name
+  dplyr::select(-geo_informed)
+
+#now update teh fowler dataframes
+fowler_formatted2=fowler_formatted %>% 
+  rename(old_bee_name = scientificName) %>%
+  left_join(folwer_updated %>% rename(old_bee_name = providedName,scientificName = finalName))
+diet_breadth2 = diet_breadth %>% 
+  rename(old_bee_name = scientificName) %>%
+  left_join(folwer_updated %>% rename(old_bee_name = providedName,scientificName = finalName))
+
+
+# write_csv(fowler_formatted2,'modeling_data/fowler_formatted-7march2023.csv')
+# write_csv(diet_breadth2,'modeling_data/bee_diet_breadth-7march2023.csv')
+
+##old method of bee name alignment
+#do this using name alignment template
 #save file for name alignment on github
 fowler_names_toAlign = data.frame(scientificName = unique(fowler_formatted$scientificName))
 # write_csv(fowler_names_toAlign,'modeling_data/fowler_toAlign.csv')

@@ -11,8 +11,16 @@ General workflow for running the analyses:
 
    a. Output: *interactions-14dec2022.csv*
 
-4. Update bee names and filter to just be native US bees using [scripts/update bee names.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/update%20bee%20names.R)
+4. Get list of USA native bee species using [scripts/Chesshire2023-beeArea.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/Chesshire2023-beeArea.R)
+
+   a. Output: *Chesshire2023_nameAlignment.csv*
+
+5. Update *Chesshire2023_nameAlignment.csv* to include information about whether name alignment was informed by geography using [scripts/name-alignment-chesshire.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/name-alignment-chesshire.R)
+
+   a. Output: *Chesshire2023_nameAlignment-geoUpdate.csv*
+   
+5. Update bee names and filter to just be native US bees using [scripts/update bee names.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/update%20bee%20names.R)
   
-5. Update plant names and make plant phylogeny using [scripts/make plant phylogeny.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/make%20plant%20phylogeny.R)
+6. Update plant names and make plant phylogeny using [scripts/make plant phylogeny.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/make%20plant%20phylogeny.R)
 6. Format and update name of list of specialist bees using [scripts/format_fowler_hosts.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/format_fowler_hosts.R)
 7. Run analyses using [scripts/main_analyses.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/main%20analyses.R)

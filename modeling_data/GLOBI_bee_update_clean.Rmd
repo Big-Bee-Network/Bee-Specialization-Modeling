@@ -46,13 +46,52 @@ plant_source_df <- plant_source_df %>% dplyr::rename(sourceCitation = targetCita
 # The filtering method guarantees two disjoint data frames
 interactions_dup = rbind(bee_source_df, plant_source_df) 
 # Combine and drop duplicates
-interactions = rbind(bee_source_df, plant_source_df) %>% unique()
+interactions_b = rbind(bee_source_df, plant_source_df) %>% unique()
+```
+
+
+## Reformat column names
+```{r}
+for (c in colnames(interactions_b)) {
+  interactions_b[[c]] <-  tolower(interactions_b[[c]])
+}
+
+
+capitalize = function(a_string){
+  
+  beginning = toupper(substr(a_string,1,1))
+  ending = substr(a_string,2,nchar(a_string))
+  
+  return(paste0(beginning,ending))
+  
+}
+
+
+```
+
+
+## Remove plants not id'd to at least genus level, and bees that are not id'd to species
+## Change old family names for Asteraceae, Lamiaceae and Apiaceae
+```{r}
+#reformat the interactions data:
+interactions_reformat = interactions_b %>% 
+  mutate(scientificName = capitalize(sourceTaxonSpeciesName), 
+         bee_family = capitalize(sourceTaxonFamilyName),
+         plant_family = capitalize(targetTaxonFamilyName), 
+         plant_genus = capitalize(targetTaxonGenusName),
+         plant_species = capitalize(targetTaxonName)) %>%
+  filter(scientificName != '' & plant_family !='' & plant_genus != "") %>%
+  filter(targetTaxonRank %in% c('subspecies','species',"genus",'subgenus','variety')) %>%
+  filter(sourceTaxonRank %in% c("subspecies",'variety','species')) %>%
+  mutate(plant_family = ifelse(plant_family=='Compositae','Asteraceae',plant_family)) %>%
+  mutate(plant_family = ifelse(plant_family=='Umbelliferae','Apiaceae',plant_family)) %>%
+  mutate(plant_family = ifelse(plant_family=='Labiatae','Lamiaceae',plant_family)) 
 ```
 
 
 # Export to csv file
 ```{r}
-# readr::write_csv(interactions, "interactions-14dec2022.csv")
+# readr::write_csv(interactions_reformat, "interactions-14dec2022.csv")
 ```
 
 

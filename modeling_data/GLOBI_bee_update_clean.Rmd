@@ -1,7 +1,7 @@
 ---
 title:          Data Cleaning
 output:         html_document
-participants:   N. Bachelder, A. Chen, Z. Fang, M. Rapaport, S. Solomon
+participants:   N. Bachelder, A. Chen, Z. Fang, M. Rapaport, S. Solomon, C. Smith
 date:           Feb 18, 2021
 source:         https://www.globalbioticinteractions.org/about
 ---
@@ -52,7 +52,7 @@ interactions = rbind(bee_source_df, plant_source_df) %>% unique()
 
 # Export to csv file
 ```{r}
-readr::write_csv(interactions, "interactions-14dec2022.csv")
+# readr::write_csv(interactions, "interactions-14dec2022.csv")
 ```
 
 

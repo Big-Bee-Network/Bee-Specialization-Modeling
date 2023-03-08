@@ -11,7 +11,7 @@ General workflow for running the analyses:
 
    a. Output: *interactions-14dec2022.csv*
 
-4. Get list of USA native bee species using [scripts/Chesshire2023-beeArea.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/Chesshire2023-beeArea.R)
+4. Get list of USA native bee species and calculate extent of occurence using [scripts/Chesshire2023-beeArea.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/Chesshire2023-beeArea.R)
 
    a. Output: *Chesshire2023_nameAlignment.csv*
 
@@ -26,6 +26,8 @@ General workflow for running the analyses:
 6. Update plant names and make plant phylogeny using [scripts/make plant phylogeny.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/make%20plant%20phylogeny.R)
 
    a. Output: *globi_allNamesUpdated.csv*
+   
+   b. Output: *globi_phyloDiv.csv*
    
 7. Format and update name of list of specialist bees using [scripts/format_fowler_hosts.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/format_fowler_hosts.R)
 8. Run analyses using [scripts/main_analyses.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/main%20analyses.R)

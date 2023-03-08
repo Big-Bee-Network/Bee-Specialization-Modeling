@@ -11,7 +11,7 @@ General workflow for running the analyses:
 
    a. Output: *interactions-14dec2022.csv*
 
-4. Get list of USA native bee species using scripts/Chesshire2023-beeArea.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/Chesshire2023-beeArea.R)
+4. Get list of USA native bee species using [scripts/Chesshire2023-beeArea.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/Chesshire2023-beeArea.R)
 
    a. Output: *Chesshire2023_nameAlignment.csv*
 

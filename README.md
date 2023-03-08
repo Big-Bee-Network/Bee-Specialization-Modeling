@@ -26,6 +26,7 @@ General workflow for running the analyses:
 6. Update plant names and make plant phylogeny using [scripts/make plant phylogeny.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/make%20plant%20phylogeny.R)
 
    a. Output: *globi_allNamesUpdated.csv*
+   
    b. Output: *globi_phyloDiv.csv*
    
 7. Format and update name of list of specialist bees using [scripts/format_fowler_hosts.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/format_fowler_hosts.R)

@@ -9,8 +9,10 @@ library(tigris)
 
 
 # load the globi data
-# this is a file with the globi records and plant names are updated 
-globi_r = read_csv('modeling_data/globi_occ_names_updated-19dec2022.csv') %>%
+
+# this is a file with the globi records filtered to be just bees 
+# without plant names updated 
+globi_r = vroom("modeling_data/interactions-14dec2022.csv")%>%
   mutate(unique_id = 1:nrow(.)) 
 
 globi_r %>% filter(sourceTaxonRank=='variety') %>% distinct(scientificName)
@@ -76,7 +78,7 @@ globi_align1 = globi_provided %>%
   filter(!is.na(finalName)) %>%
   bind_rows(only_in_final)
 
-#there are also bees where the provided names are mispeleld or incorrect but the 
+#there are also bees where the provided names are misspelled or incorrect but the 
 # alignment isn't in the chesshire data
 # add these
 alignment_toAdd = data.frame(providedName = c("Melissodes lupina","Melissodes bimaculata","Melissodes rustica"),
@@ -86,7 +88,7 @@ globi_align2 =  globi_provided %>%
   left_join(alignment_toAdd) %>%
   filter(!is.na(finalName)) 
 
-# second do alignments that are informed by geography
+# next do alignments that are informed by geography
 chesshire_geo = chesshire %>% filter(geo_informed)
 globi_provided %>%
   filter(providedName %in% chesshire_geo$providedName) #only 5
@@ -133,7 +135,7 @@ rm_uids %>%
 #how many records are removed?
 nrow(rm_uids)
 
-#update globi daata again
+#update globi data again
 globi_r_updated2 = globi_r_updated %>%
   filter(!unique_id %in% rm_uids$unique_id)
 #make third name alignment df for name updates informed by geography
@@ -162,12 +164,12 @@ old_globi = read_csv('modeling_data/globi_american_native_bees.csv')
   group_by(old_bee_name, scientificName) %>%
   summarize(n=n()) %>%
   arrange(desc(n)))
-check_me_bees %>% filter(old_bee_name != scientificName) #this species is alaskan...
+check_me_bees %>% filter(old_bee_name != scientificName) #this species is alaskan
 
 #
 
 
-# write_csv(globi_names1,'modeling_data/globi_american_native_bees_7march2023.csv')
+ # write_csv(globi_names1,'modeling_data/globi_american_native_bees_7march2023.csv')
 
 
 

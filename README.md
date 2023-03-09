@@ -51,7 +51,13 @@ Column names in *globi_speciesLevelFinal.csv*
 | bee_family | bee species' family        | 
 | diet_breadth | whether bee is a pollen specialist or generalist according to Fowler lists        | 
 | phylo_rich | Faith's phylogenetic diversity of plant genera visited       | 
-| phylo_simp | Phylogenetic Simpson diversity of plant genera visited       | 
-| rich_genus | Number of plant genera visited        | 
-| simpson_genus | Inverse Simpson diversity of plant genera visited        | 
+| phylo_simp | phylogenetic Simpson diversity of plant genera visited       | 
+| rich_genus | number of plant genera visited        | 
+| simpson_genus | inverse Simpson diversity of plant genera visited        | 
+| rich_fam | number of plant families visited        | 
+| simpson_fam | inverse Simpson diversity of plant families visited        | 
+| n_globi | sample size in GLOBI        | 
+| eigen1 | first eigenvalue of matrix of bee phylogenetic distance        | 
+| eigen2 | second eigenvalue of matrix of bee phylogenetic distance        | 
+
 

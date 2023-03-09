@@ -48,4 +48,10 @@ Column names in *globi_speciesLevelFinal.csv*
 | :------------ |:---------------| 
 | scientificName      | bee species name | 
 | bee_genus      | bee species' genus        |   
-| bee_family | bee species' family        |   
+| bee_family | bee species' family        | 
+| diet_breadth | whether bee is a pollen specialist or generalist according to Fowler lists        | 
+| phylo_rich | Faith's phylogenetic diversity of plant genera visited       | 
+| phylo_simp | Phylogenetic Simpson diversity of plant genera visited       | 
+| rich_genus | Number of plant genera visited        | 
+| simpson_genus | Inverse Simpson diversity of plant genera visited        | 
+

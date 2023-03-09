@@ -34,4 +34,30 @@ General workflow for running the analyses:
    c. Output: *globi_phyloDiv.csv*
    
 7. Format and update name of list of specialist bees using [scripts/format_fowler_hosts.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/format_fowler_hosts.R)
-8. Run analyses using [scripts/main_analyses.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/main%20analyses.R)
+8. Make final dataset using [scripts/finalDataset.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/finalDataset.R)
+
+   a. Output: [globi_speciesLevelFinal.csv](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/modeling_data/globi_speciesLevelFinal.csv)
+   
+9. Run analyses using [scripts/main_analyses.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/main%20analyses.R)
+
+
+
+Column names in *globi_speciesLevelFinal.csv*
+
+| Column Name  | Defintion  | 
+| :------------ |:---------------| 
+| scientificName      | bee species name | 
+| bee_genus      | bee species' genus        |   
+| bee_family | bee species' family        | 
+| diet_breadth | whether bee is a pollen specialist or generalist according to Fowler lists        | 
+| phylo_rich | Faith's phylogenetic diversity of plant genera visited       | 
+| phylo_simp | phylogenetic Simpson diversity of plant genera visited       | 
+| rich_genus | number of plant genera visited        | 
+| simpson_genus | inverse Simpson diversity of plant genera visited        | 
+| rich_fam | number of plant families visited        | 
+| simpson_fam | inverse Simpson diversity of plant families visited        | 
+| n_globi | sample size in GLOBI        | 
+| eigen1 | first eigenvalue of matrix of bee phylogenetic distance        | 
+| eigen2 | second eigenvalue of matrix of bee phylogenetic distance        | 
+
+

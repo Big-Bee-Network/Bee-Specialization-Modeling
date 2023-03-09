@@ -27,7 +27,7 @@ data = plant_phy %>%
 View(data)
 View(data %>% 
        select(scientificName,phylo_rich,phylo_simp,n_chesshire,area_ha,med_doy,flight_season,med_lat,med_long,eigen1,eigen2))
-
+#
 #let's see if randomForest works with NA values for area
 library(randomForest)
 rf = randomForest(as.factor(diet_breadth) ~ phylo_rich + area_ha,importance = T,data=data)

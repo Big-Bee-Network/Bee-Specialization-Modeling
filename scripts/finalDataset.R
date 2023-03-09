@@ -12,12 +12,12 @@ diet_breadth = read_csv('modeling_data/bee_diet_breadth-7march2023.csv')
 #combine with bee_phy and geo
 #add diet breadth info
 data = plant_phy %>%
-  left_join(bee_phy, by = 'bee_genus') %>%
-  left_join(geo)  %>% left_join(diet_breadth %>% 
+  left_join(geo) %>%
+  left_join(bee_phy)  %>% left_join(diet_breadth %>% 
   distinct(scientificName,diet_breadth,diet_breadth_detailed)) %>%
   mutate(diet_breadth = ifelse(is.na(diet_breadth),'generalist',diet_breadth),
          diet_breadth_detailed = ifelse(is.na(diet_breadth_detailed),'generalist',diet_breadth_detailed)) %>%
-  select(scientificName,bee_genus,bee_family,diet_breadth,everything())
+  select(scientificName,bee_genus,bee_family,diet_breadth,diet_breadth_detailed,everything())
 
 
 #write final dataset to csv

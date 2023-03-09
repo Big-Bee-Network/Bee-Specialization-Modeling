@@ -1,6 +1,6 @@
 # Predicting Specialist Bee Species
 
-General workflow for running the analyses:
+## General workflow for running the analyses:
 
 1. Download full GloBI interaction dataset from [Zenodo](https://zenodo.org/record/7348355#.Y5owy-zMIcQ).
 2. Filter the dataset to just include bee data using [scripts/format_bee_data.sh](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/format_bee_data.sh)
@@ -42,7 +42,7 @@ General workflow for running the analyses:
 
 
 
-Column names in *globi_speciesLevelFinal.csv*
+## Defintions of column names in *globi_speciesLevelFinal.csv*
 
 | Column Name  | Defintion  | 
 | :------------ |:---------------| 

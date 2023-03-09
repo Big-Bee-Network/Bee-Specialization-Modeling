@@ -42,8 +42,10 @@ General workflow for running the analyses:
 
 
 
-| Left Aligned  | Center Aligned  | Right Aligned |
-| :------------ |:---------------:| -----:|
-| col 3 is      | some wordy text | $1600 |
-| col 2 is      | centered        |   $12 |
-| zebra stripes | are neat        |    $1 |
+Column names in *globi_speciesLevelFinal.csv*
+
+| Column Name  | Defintion  | 
+| :------------ |:---------------| 
+| scientificName      | bee species name | 
+| bee_genus      | bee species' genus        |   
+| bee_family | bee species' family        |   

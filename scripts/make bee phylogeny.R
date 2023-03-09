@@ -9,78 +9,54 @@ library('picante')
 library("U.PhyloMaker")
 
 #### Read in phylogenetic tree
-mytree <- read.tree("modeling_data/12862_2013_2375_MOESM1_ESM.txt",comment.char = "#", keep.multi = TRUE, tree.names=c("treeA","treeB","treeC","treeD","treeE","treeF","treeG","treeH","treeI","treeJ"))
+# mytree <- read.tree("modeling_data/12862_2013_2375_MOESM1_ESM.txt",comment.char = "#", keep.multi = TRUE, tree.names=c("treeA","treeB","treeC","treeD","treeE","treeF","treeG","treeH","treeI","treeJ"))
+mytree <- read.tree('modeling_data/12862_2013_2375_MOESM3_ESM.txt')
 
-###read in the globi bee data
+### read in the globi bee data
 globi = read_csv("modeling_data/globi_allNamesUpdated.csv") %>%
   mutate(bee_genus = sub(" .*","",scientificName))
 globi_genera = unique(globi$bee_genus)
 globi_species2 = unique(globi$scientificName)
 globi_species =sub(" ","_",globi_species2)
 
-# abritrarily picked the first tree of a list of 10 to work with
-workingtree <- mytree[[1]] 
+# abritrarily picked the a tree from the list of 10 to work with
+which_index = 1
+bee_tree <- mytree[[which_index]] 
+
+###root with apoid wasp outgroup
+workingtree=root(bee_tree,outgroup="Tachysphex")
+workingtree=as.phylo(workingtree)
+# 
+##Make ultrametric
+workingtree=chronos(workingtree)
+# is.ultrametric(bee_tree)
+
+#remove bee genera that are not in globi
+drop_me = bee_tree$tip.label[!bee_tree$tip.label %in% globi_genera]
+pruned_tree = drop.tip(workingtree, drop_me)
 
 
-#make data frame with the bees in the tree and their genus
-tree_bees = data.frame(bee = workingtree$tip.label) %>%
-  mutate(bee_genus = sub("_.*",'',bee))
+# add genera not in Hedtke
+(genera_out = globi_genera[!globi_genera %in% workingtree$tip.label])#look at them
+species_list = globi_genera
+genus_list = data.frame(globi %>%
+  distinct(bee_genus,bee_family) %>% select(bee_genus,bee_family) %>% rename(genus = bee_genus,family = bee_family))
 
-#any of the globi bee genera not in the tree?
-(genera_out = globi_genera[!globi_genera %in% tree_bees$bee_genus] ) #yup
-bees_in_tree = globi_species[globi_species %in% tree_bees$bee]
+#add them using megatree approach in U.PhyloMaker
+result <- phylo.maker(species_list , pruned_tree, genus_list, scenario=2)
+new_bee_tree = result$phylo
+is.ultrametric(new_bee_tree)
 
-set.seed(7211)
-#for bee genera with species in the tree randomly pick one of each species
-bees_in_tree_sampled = globi %>% filter(scientificName %in% sub("_"," ",bees_in_tree)) %>%
-  split(.$bee_genus) %>% map_dfr(function(df){
-    sampled_index = sample(nrow(df),1) #get a random row index
-    output = df[sampled_index,] %>% select(scientificName) %>% 
-      rename(bee = scientificName) %>% mutate(bee_genus = sub(" .*","",bee))
-    return(output)
-  })
-
-#for bee genera that are on the tree (but different species)
-#randomly pick a species that's on the tree
-bee_gen_in_tree = globi_genera[!globi_genera %in% c(genera_out,bees_in_tree_sampled$bee_genus)]
-bees_gen_in_tree_sampled=  tree_bees %>% filter(bee_genus %in% bee_gen_in_tree) %>%
-  split(.$bee_genus) %>% map_dfr(function(df){
-    sampled_index = sample(nrow(df),1) #get a random row index
-    output = df[sampled_index,] %>% select(bee) %>% 
-      mutate(bee = sub('_'," ",bee)) %>%
-       mutate(bee_genus = sub(" .*","",bee))
-    return(output)
-  })
-
-#for everything else just randomly pick a species
-#for genera not on the tree, randomly pick a species from the globi data
-out_bees = globi %>% filter(bee_genus %in% genera_out) %>% split(.$bee_genus) %>%
-  map_dfr(function(df){
-    sampled_index = sample(nrow(df),1) #get a random row index
-    output = df[sampled_index,] %>% select(scientificName) %>% rename(bee = scientificName)
-    return(output)
-  })
-
-#make genus list,
-#keep_bees_df is species list
-genus_list = data.frame(globi %>% distinct(bee_genus,bee_family) %>% 
-  rename(genus=bee_genus,family=bee_family) %>%
-  select(genus,family))
-#any genera duplicated?
-genus_list[duplicated(genus_list$genus),] #nope
-
-##make species list
-species_list = data.frame(bees_in_tree_sampled %>% 
-  select(bee) %>% 
-  bind_rows(bees_gen_in_tree_sampled %>% select(bee)) %>%
-  bind_rows(out_bees))
-
-result <- phylo.maker(species_list , workingtree, genus_list, scenario=2)
-pruned_tree = result$phylo
-plot(pruned_tree)
-phylo_dist = cophenetic(pruned_tree)
+#double check tree looks okay for a few genera in each fam
+keep = c("Osmia","Hesperapis", 'Bombus',"Andrena","Perdita",'Colletes','Megachile','Lasioglossum')
+all_gen = new_bee_tree$tip.label
+(rm_genera = all_gen[!all_gen %in% keep])
+very_pruned = drop.tip(new_bee_tree,rm_genera)
+plot(very_pruned)
 
 
+
+phylo_dist = cophenetic.phylo(new_bee_tree)
 #plot phylogenetic distance between the bees
 # phylo_dist = cophenetic(pruned_tree)
 my_pcoa <- stats:::cmdscale(phylo_dist,eig=T)
@@ -88,19 +64,30 @@ plot(my_pcoa$points) # looks pretty weird
 
 my_pcoa$points
 my_pcoa$eig[1:6]
-bee_fam = data.frame(bee = row.names(my_pcoa$points),eigen1 = my_pcoa$points[,1],eigen2 = my_pcoa$points[,2]) %>%
-  mutate(bee = sub("_",' ',bee)) %>%
-  left_join(species_list %>%  mutate(bee_genus = sub(" .*","",bee)),by='bee') %>% #get fams
+bee_fam = data.frame(bee_genus = row.names(my_pcoa$points),eigen1 = my_pcoa$points[,1],eigen2 = my_pcoa$points[,2]) %>%
   left_join(globi %>% distinct(bee_genus,bee_family))
 
+data.frame(bee_genus = row.names(my_pcoa$points),eigen1 = my_pcoa$points[,1],eigen2 = my_pcoa$points[,2])
 
 #add pairwise phylo_dist
 phylo_df = as.data.frame(phylo_dist)
-colnames(phylo_df) = sub("_.*",'',colnames(phylo_df))
-phylo_df$bee_genus = sub("_.*",'',row.names(phylo_dist))
+phylo_df$bee_genus = row.names(phylo_dist)
 row.names(phylo_df) <- NULL
 
-bee_fam2 = bee_fam %>% left_join(phylo_df)
+bee_fam2 = globi %>% distinct(scientificName,bee_genus) %>%
+  left_join(bee_fam %>% left_join(phylo_df))
+color_pal=RColorBrewer::brewer.pal(8,'Set3')[c(1,3:8)]
+my_cols = adjustcolor(color_pal[as.factor(bee_fam$bee_family)],.4)
+my_cols2 = adjustcolor(color_pal[as.factor(bee_fam$bee_family)],.7)
 
-# write_csv(bee_fam2 %>% select(bee_genus,everything()) %>% select(-bee),
-#           'modeling_data/bee_phylogenetic_data.csv')
+with(bee_fam,plot(eigen1,eigen2,pch=16,col = my_cols))
+legend("bottomleft",unique(bee_fam$bee_family),col=unique(my_cols2),pch=16)
+
+
+#why is melittidae so close to andrenidae/colletidae??
+phylo_df %>% filter(bee_genus=="Andrena") %>% select(bee_genus,"Hesperapis",'Colletes','Megachile','Bombus','Perdita')
+plot(very_pruned)
+phylo_df %>% filter(bee_genus=="Bombus") %>% select(bee_genus,"Hesperapis",'Colletes','Megachile','Lasioglossum')
+phylo_df %>% filter(bee_genus=="Hesperapis") %>% select(bee_genus,"Andrena","Perdita",'Colletes','Megachile','Lasioglossum')
+
+# write_csv(bee_fam2 %>% select(bee_genus,everything()) %>% select(-bee),'modeling_data/bee_phylogenetic_data.csv')

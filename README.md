@@ -14,6 +14,8 @@ General workflow for running the analyses:
 4. Get list of USA native bee species and calculate extent of occurence using [scripts/Chesshire2023-beeArea.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/Chesshire2023-beeArea.R)
 
    a. Output: *Chesshire2023_nameAlignment.csv*
+   
+   b. Output: *chesshire2023_beeArea.cs*
 
 5. Update *Chesshire2023_nameAlignment.csv* to include information about whether name alignment was informed by geography using [scripts/name-alignment-chesshire.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/name-alignment-chesshire.R)
 

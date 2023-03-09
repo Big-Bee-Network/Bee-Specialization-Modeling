@@ -39,3 +39,11 @@ General workflow for running the analyses:
    a. Output: [globi_speciesLevelFinal.csv](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/modeling_data/globi_speciesLevelFinal.csv)
    
 9. Run analyses using [scripts/main_analyses.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/main%20analyses.R)
+
+
+
+| Left Aligned  | Center Aligned  | Right Aligned |
+| :------------ |:---------------:| -----:|
+| col 3 is      | some wordy text | $1600 |
+| col 2 is      | centered        |   $12 |
+| zebra stripes | are neat        |    $1 |

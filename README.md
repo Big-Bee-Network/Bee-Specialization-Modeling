@@ -15,7 +15,7 @@ General workflow for running the analyses:
 
    a. Output: *Chesshire2023_nameAlignment.csv*
    
-   b. Output: *chesshire2023_beeArea.cs*
+   b. Output: *chesshire2023_beeArea.csv*
 
 5. Update *Chesshire2023_nameAlignment.csv* to include information about whether name alignment was informed by geography using [scripts/name-alignment-chesshire.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/name-alignment-chesshire.R)
 

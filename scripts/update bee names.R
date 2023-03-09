@@ -169,7 +169,7 @@ check_me_bees %>% filter(old_bee_name != scientificName) #this species is alaska
 #
 
 
- # write_csv(globi_names1,'modeling_data/globi_american_native_bees_7march2023.csv')
+# write_csv(globi_names1,'modeling_data/globi_american_native_bees_7march2023.csv')
 
 
 

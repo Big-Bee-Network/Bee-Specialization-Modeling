@@ -5,38 +5,11 @@ library(tidyverse)
 
 #load the data
 options(max.print=1000000)
-interactions_b <- vroom('modeling_data/interactions-14dec2022.csv')
+interactions_b <- vroom('modeling_data/interactions-14dec2022.csv') #note this is non-filtered data (includes non-usa & non-native bees)
 fowler <- read_csv("modeling_data/fowler_hostplants.csv") 
 
-for (c in colnames(interactions_b)) {
-  interactions_b[[c]] <-  tolower(interactions_b[[c]])
-}
 
-
-capitalize = function(a_string){
-  
-  beginning = toupper(substr(a_string,1,1))
-  ending = substr(a_string,2,nchar(a_string))
-  
-  return(paste0(beginning,ending))
-  
-}
-
-#reformat the interactions data:
-interactions_reformat = interactions_b %>% 
-  mutate(scientificName = capitalize(sourceTaxonSpeciesName), 
-         bee_family = capitalize(sourceTaxonFamilyName),
-         plant_family = capitalize(targetTaxonFamilyName), 
-         plant_genus = capitalize(targetTaxonGenusName),
-         plant_species = capitalize(targetTaxonName)) %>%
-  filter(scientificName != '' & plant_family !='' & plant_genus != "") %>%
-  filter(targetTaxonRank %in% c('subspecies','species',"genus",'subgenus','variety')) %>%
-  filter(sourceTaxonRank %in% c("subspecies",'variety','species')) %>%
-  mutate(plant_family = ifelse(plant_family=='Compositae','Asteraceae',plant_family)) %>%
-  mutate(plant_family = ifelse(plant_family=='Umbelliferae','Apiaceae',plant_family)) %>%
-  mutate(plant_family = ifelse(plant_family=='Labiatae','Lamiaceae',plant_family)) 
-
-plant_df = interactions_reformat %>%
+plant_df = interactions_b %>%
   distinct(plant_species)
 test_me = plant_df$plant_species
 
@@ -56,11 +29,8 @@ not_in_wfo = data.frame(globi_name = c("Spiranthes arcisepala","Lisianthus skinn
                         accepted = c("Spiranthes arcisepala","Lisianthus skinneri","Cuphea viscosissima","Aphanostephus riddellii","Jacquemontia curtissii","Lathyrus cabrerianus","Oncosiphon suffruticosum","Spergularia fasciculata","Ageratina theifolia","Salvia palifolia","Callianthe striata","Rabelera holostea","Kewa salsoloides","Doellingeria vialis","Sairocarpus multiflorus","Ipomoea cuneata","Oncosiphon piluliferum","Quadrella indica","Baccharis glabrata","Euphorbia bourgaeana","Austroeupatorium inulifolium","Cirsium nuttallii","Salvia polystachia",'Mimulus cardinalis',"Senna marilandica","Sabulina michauxii","Indigofera rautanenii"),
                         family=c("Orchidaceae","Gentianaceae","Lythraceae","Asteraceae","Convolvulaceae","Fabaceae","Asteraceae",'Caryophyllaceae','Asteraceae','Lamiaceae','Malvaceae',"Caryophyllaceae","Kewaceae","Asteraceae", "Plantaginaceae","Convolvulaceae","Asteraceae","Capparaceae","Asteraceae","Euphorbiaceae","Asteraceae",'Asteraceae',"Lamiaceae",'Phrymaceae','Fabaceae','Caryophyllaceae','Fabaceae'),
                         source= c("col",'col',"itis","itis","itis","col","col","col","col",'col',"col",'col',"col","col", "col","col","itis",'itis',"col",'itis',"col",'itis',"col",'itis',"itis",'col','itis'))
+# write_csv(not_in_wfo,'modeling_data/plant_search1.csv')
 
-# 1) remove observations that are not genus-level plant IDs
-#some of these are not vascular plants or not id'd to genus (e.g Heliantheae)
-rm_me = c("Coleoptera","White","Picconiella","Heliantheae","Eupatorieae","Eremocarpus") #Eremocarpus is now split into 3 different genera
-test_me = test_me[!test_me %in% rm_me]
 
 ### 2) update spelling mistakes in globi - new data.frame is called 'interactions_updated'
 # first let's look at the taxa that are not in the data to try to catch any spelling mistakes:
@@ -99,7 +69,7 @@ change_formatting3 = data.frame(globi_name = missing_plants,wfo_name = chop_off_
 # first look at hybrids 
 (hybrids = missing_plants[grepl("×",missing_plants)])
 #code for checking:
-interactions_reformat %>% filter(plant_species=="Xanthoxylum") %>% distinct(targetTaxonPathNames)
+interactions_b %>% filter(plant_species=="Xanthoxylum") %>% distinct(targetTaxonPathNames)
 
 #data frame of all the species with spelling mistakes:
 change_spelling = data.frame(globi_name = c("Aloë","Sanvitalia abertii","Salvia cuatrecasasiana","Phacelia caerulea","Exodeconus maritimus","Rhus copallina","Adelinia grande","Helianthus maximilliani","Citrus paridisi","Quesnelia strobilispica","Atropa belladonna","Oncosiphon grandiflorum","Stevia satureiifolia","Nephrosperma van-houtteanum","Layia gaillardioides","Lachnanthes caroliana","Potentilla pulcherima","Datura inoxia","Achyrocline satureoides","Salpingostylis caelestina","Nama hispidum","Salvia ballotaeflora","Polemonium vanbruntiae","Mitracarpus villosa","Zephyranthes atamasca","Dorycnopsis gerardi","Simsia lagascaeformis","Arctomecon californica","Disperis wealei","Iva xanthifolia","Nepeta faassenii","Eleagnus","Spirea","Pseudoveronica","Xanthoxylum","Serpyllum","Astralagus","Chicorium",'Clerodendron',"Aesculus × carnea", "Dicerandra × thinicola","Bougainvillea × buttiana","Neuradopsis austro-africana"), 
@@ -112,7 +82,7 @@ change_formatting_all = change_formatting %>% bind_rows(change_formatting2) %>% 
 (dupes = change_formatting_all$globi_name[duplicated(change_formatting_all$globi_name)])
 
 
-interactions_updated = interactions_reformat %>% filter(!plant_species %in% rm_me) %>%
+interactions_updated = interactions_b %>% 
   left_join(change_formatting_all %>% rename(plant_species=globi_name)) %>%
   mutate(plant_species = ifelse(is.na(wfo_name),plant_species,wfo_name)) %>%
   select(-wfo_name)
@@ -213,5 +183,24 @@ nrow(interactions_updated_final) == nrow(interactions_updated)
 with(interactions_updated_final,mean(plant_species != old_plant)) #about 5%
 
 #save the file as a csv
+# what we want is a data.frame with wfo data with genus and family
+wfo_fams = interactions_updated_final %>% distinct(plant_genus,plant_family)%>%
+  select(plant_genus,plant_family)
+
+#make sure no genera are duplicated
+(dupes2 = wfo_fams$plant_genus[duplicated(wfo_fams$plant_genus)])
+
+
+#filter to just be genera
+just_gen = interactions_updated_final[!grepl(' ',interactions_updated_final$plant_species),]
+genus_updates = just_gen %>% distinct(old_pl_genus,plant_genus,plant_family) %>%
+  select(old_pl_genus,plant_genus,plant_family) %>%
+  arrange(old_pl_genus)
+genus_updates %>% filter(old_pl_genus != plant_genus)
+
+# write_csv(genus_updates,'modeling_data/wfo_genus_updates.csv')
+# write_csv(wfo_fams, 'modeling_data/plant_fam_info.csv')
+
+
 # write_csv(interactions_updated_final,"modeling_data/globi_occ_names_updated-19dec2022.csv")
 

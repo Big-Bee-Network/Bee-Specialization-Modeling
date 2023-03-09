@@ -20,9 +20,11 @@ data = plant_phy %>%
   select(scientificName,bee_genus,bee_family,diet_breadth,everything())
 
 
+#write final dataset to csv
+# write_csv(data,"modeling_data/globi_speciesLevelFinal.csv")
 #variables from the data we care about:
 # phylo_rich,phylo_simp,n_chesshire,area_ha,mean_doy,eigen1,eigen2, mean_lat,mean_long
-
+View(data)
 View(data %>% 
        select(scientificName,phylo_rich,phylo_simp,n_chesshire,area_ha,med_doy,flight_season,med_lat,med_long,eigen1,eigen2))
 

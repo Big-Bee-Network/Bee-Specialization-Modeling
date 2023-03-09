@@ -34,4 +34,8 @@ General workflow for running the analyses:
    c. Output: *globi_phyloDiv.csv*
    
 7. Format and update name of list of specialist bees using [scripts/format_fowler_hosts.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/format_fowler_hosts.R)
-8. Run analyses using [scripts/main_analyses.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/main%20analyses.R)
+8. Make final dataset using [scripts/finalDataset.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/finalDataset.R)
+
+   a. Output: [globi_speciesLevelFinal.csv](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/modeling_data/globi_speciesLevelFinal.csv)
+   
+9. Run analyses using [scripts/main_analyses.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/main%20analyses.R)

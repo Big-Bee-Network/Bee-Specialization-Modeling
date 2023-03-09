@@ -49,7 +49,8 @@ Column names in *globi_speciesLevelFinal.csv*
 | scientificName      | bee species name | 
 | bee_genus      | bee species' genus        |   
 | bee_family | bee species' family        | 
-| diet_breadth | whether bee is a pollen specialist or generalist according to Fowler lists        | 
+| diet_breadth | whether bee is a pollen specialist or generalist according to Fowler lists        |
+| diet_breadth_detailed | same as 'diet_breadth' but includes whether specialists are on plant families or genera        | 
 | phylo_rich | Faith's phylogenetic diversity of plant genera visited       | 
 | phylo_simp | phylogenetic Simpson diversity of plant genera visited       | 
 | rich_genus | number of plant genera visited        | 
@@ -57,7 +58,20 @@ Column names in *globi_speciesLevelFinal.csv*
 | rich_fam | number of plant families visited        | 
 | simpson_fam | inverse Simpson diversity of plant families visited        | 
 | n_globi | sample size in GLOBI        | 
+| med_lat | median latitude of bee species in Chesshire et al 2023        | 
+| med_long | median longitude of bee species in Chesshire et al 2023        | 
+| n_chesshire | sample size in Chesshire et al 2023        | 
+| area_m2 | area in m2 of extent of occurrence in Chesshire et al 2023        | 
+| area_ha | area in hectares of extent of occurrence in Chesshire et al 2023        | 
+| spherical_geometry | was spherical geometry used to calculate area of bee's extent of occurrence?        | 
+| mean_doy | mean day of year of collection in Chesshire et al 2023        | 
+| median_doy | median day of year of collection in Chesshire et al 2023        | 
+| quant10 | 10% quantile of day of year of collection in Chesshire et al 2023        | 
+| quant90 | 90% quantile of day of year of collection in Chesshire et al 2023        | 
+| flight_season | 'quant90' - 'quant10'        | 
 | eigen1 | first eigenvalue of matrix of bee phylogenetic distance        | 
 | eigen2 | second eigenvalue of matrix of bee phylogenetic distance        | 
+| all other columns | phylogenetic distance of bee genus to bee genus in column name       | 
+
 
 

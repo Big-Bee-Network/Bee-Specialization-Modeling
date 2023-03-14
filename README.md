@@ -53,6 +53,10 @@
 | diet_breadth_detailed | same as 'diet_breadth' but includes whether specialists are on plant families or genera        | 
 | phylo_rich | Faith's phylogenetic diversity of plant genera visited       | 
 | phylo_simp | phylogenetic Simpson diversity of plant genera visited       | 
+| eigen1_plantGenus | first eigenvalue of Morisita-Horn distance-matrix for plant genera visited       | 
+| eigen2_plantGenus | second eigenvalue of Morisita-Horn distance-matrix for plant genera visited       | 
+| eigen1_plantFam | first eigenvalue of Morisita-Horn distance-matrix for plant families visited       | 
+| eigen2_plantFam | second eigenvalue of Morisita-Horn distance-matrix for plant families visited       | 
 | rich_genus | number of plant genera visited        | 
 | simpson_genus | inverse Simpson diversity of plant genera visited        | 
 | rich_fam | number of plant families visited        | 

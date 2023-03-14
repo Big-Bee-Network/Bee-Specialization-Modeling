@@ -17,17 +17,31 @@ data = plant_phy %>%
   distinct(scientificName,diet_breadth,diet_breadth_detailed)) %>%
   mutate(diet_breadth = ifelse(is.na(diet_breadth),'generalist',diet_breadth),
          diet_breadth_detailed = ifelse(is.na(diet_breadth_detailed),'generalist',diet_breadth_detailed)) %>%
-  select(scientificName,bee_genus,bee_family,diet_breadth,diet_breadth_detailed,everything())
+  select(scientificName,bee_genus,bee_family,diet_breadth,diet_breadth_detailed,everything()) 
 
+
+#filter out data we don't have ANY phenology data for
+#how many lacked phenological data
+paste0(nrow(data %>% filter(is.na(med_doy))), ' species lack any phenological data')
+data_final = data %>% filter(!is.na(med_doy))
+
+#how many specialists and how many generalists?
+specs = data_final %>% filter(diet_breadth=='specialist')
+gens = data_final %>% filter(diet_breadth=='generalist')
+
+paste0('there are ', sum(specs$n_globi),' specialists of ', nrow(specs), ' species.')
+paste0('there are ', sum(gens$n_globi),' generalist of ', nrow(gens), ' species.')
 
 #write final dataset to csv
-# write_csv(data,"modeling_data/globi_speciesLevelFinal.csv")
-#variables from the data we care about:
-# phylo_rich,phylo_simp,n_chesshire,area_ha,mean_doy,eigen1,eigen2, mean_lat,mean_long
-View(data)
-View(data %>% 
-       select(scientificName,phylo_rich,phylo_simp,n_chesshire,area_ha,med_doy,flight_season,med_lat,med_long,eigen1,eigen2))
-#
-#let's see if randomForest works with NA values for area
-library(randomForest)
-rf = randomForest(as.factor(diet_breadth) ~ phylo_rich + area_ha,importance = T,data=data)
+data %>% filter(is.na(area_m2))
+# write_csv(data_final,"modeling_data/globi_speciesLevelFinal.csv")
+
+# #variables from the data we care about:
+# # phylo_rich,phylo_simp,n_chesshire,area_ha,mean_doy,eigen1,eigen2, mean_lat,mean_long
+# View(data)
+# View(data %>% 
+#        select(scientificName,phylo_rich,phylo_simp,n_chesshire,area_ha,med_doy,flight_season,med_lat,med_long,eigen1,eigen2))
+# #
+# #let's see if randomForest works with NA values for area
+# library(randomForest)
+# rf = randomForest(as.factor(diet_breadth) ~ phylo_rich + area_ha,importance = T,data=data)

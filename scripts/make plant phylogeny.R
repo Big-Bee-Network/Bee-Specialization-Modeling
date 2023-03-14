@@ -13,10 +13,10 @@ library(V.PhyloMaker)
 # load the filtered globi data
 # this is a file with the globi records and plant and bee names are updated 
 # bees are filtered to just be species that are native to the US
-globi = vroom('modeling_data/globi_american_native_bees_7march2023.csv')
+globi_full = vroom('modeling_data/globi_american_native_bees_7march2023.csv')
 
 #standardize according to the plant list, because that's what v.phylomaker uses
-plant_df = globi %>% distinct(plant_species,plant_genus,plant_family) %>% 
+plant_df = globi_full %>% distinct(plant_species,plant_genus,plant_family) %>% 
   rename(genus=plant_genus,family=plant_family)
 test_me = plant_df$plant_species
 
@@ -24,6 +24,13 @@ test_me = plant_df$plant_species
 #and also do genus updates with those, since tpl doesn't have a lot of those
 genus_updates = read_csv('modeling_data/wfo_genus_updates.csv')
 wfo_fams = read_csv('modeling_data/plant_fam_info.csv')
+
+##let's get rid of bees we don't have phenology data for
+bee_geo = read_csv('modeling_data/chesshire2023_beeArea.csv')
+bee_geo_na  = bee_geo[is.na(bee_geo$med_doy),]$scientificName
+#how many don't we have phenology data for?
+globi_full %>% filter(scientificName %in% bee_geo_na) %>% distinct(scientificName)
+globi = globi_full %>% filter(!scientificName %in% bee_geo_na) 
 
 # # ##uncomment me to check you have all the names
 # # # #these are plants we already updated with TPL (takes a really long time to run)
@@ -138,8 +145,8 @@ scenario3 = angio_tree$scenario.3
 scenario3$tip.label <- sub("_.*","",scenario3$tip.label)
 
 
-#now we need to calculate phylogenetic diversity of plants visited for each bee species
-#calculate phylogenetic diversity using hill_phylo
+#now we need to calculate phylogenetic diversity of plants visited for each 
+# bee species. calculate phylogenetic diversity using hill_phylo
 head(globi)
 a=globi_tpl %>% split(.$scientificName)
 df = a[[1]]
@@ -160,9 +167,66 @@ globi_com =data.frame(globi_tpl %>%
 globi_matrix = as.matrix(globi_com %>% select(-scientificName),nrow=nrow(globi_com))
 row.names(globi_matrix) <- globi_com$scientificName
 
+globi_matrix[1:10,1:5]
+
+
 #calculate phylo simpson diversity
 phylo_simp = hill_phylo(globi_matrix, scenario3, q = 2)
 phylo_rich = hill_phylo(globi_matrix, scenario3, q = 0)
+
+###also get plant community composition
+horn_dist = vegdist(globi_matrix, method = 'horn')
+#make pca fo the horn distance matrix
+my_pcoa <- stats:::cmdscale(horn_dist,eig=T)
+plot(my_pcoa$points) 
+
+#to check this let's find bees that were mostly visiting Solidago, e.g.
+which(colnames(globi_matrix)=='Solidago')
+soli_bees = which(globi_matrix[,68] !=0)
+soli_prop=globi_matrix[soli_bees,68]/rowSums(globi_matrix[soli_bees,])
+really_soli = names(soli_prop[soli_prop>.5])
+
+pcoa_data = data.frame(my_pcoa$points)
+colnames(pcoa_data) <- c('eigen1','eigen2')
+pcoa_data$scientificName=row.names(pcoa_data)
+row.names(pcoa_data) <- NULL
+pcoa_data$col = ifelse(pcoa_data$scientificName %in% really_soli,'red','black')
+
+with(pcoa_data, plot(eigen1,eigen2,col=col))
+
+
+#########
+#let's also do at the family-level
+globi_com_fam =data.frame(globi_tpl %>%
+                        group_by(scientificName,plant_family) %>%
+                        summarize(n=n())%>%
+                        pivot_wider(names_from=plant_family,values_from=n,values_fill = 0))
+
+globi_fam_matrix = as.matrix(globi_com_fam %>% select(-scientificName),nrow=nrow(globi_com_fam))
+row.names(globi_fam_matrix) <- globi_com_fam$scientificName
+globi_fam_matrix[1:10,1:5]
+
+###also get plant community composition at family level
+horn_dist_fam = vegdist(globi_fam_matrix, method = 'horn')
+#make pca fo the horn distance matrix
+my_pcoa_fam <- stats:::cmdscale(horn_dist_fam,eig=T)
+plot(my_pcoa_fam$points) 
+
+#to check this let's find bees that were mostly visiting Solidago, e.g.
+aster_ind = which(colnames(globi_fam_matrix)=='Asteraceae')
+aster_bees = which(globi_fam_matrix[,aster_ind] !=0)
+aster_prop=globi_fam_matrix[aster_bees, aster_ind]/rowSums(globi_fam_matrix[aster_bees,])
+really_aster = names(aster_prop[aster_prop>.8])
+
+pcoa_data_fam = data.frame(my_pcoa_fam$points)
+colnames(pcoa_data_fam) <- c('eigen1','eigen2')
+pcoa_data_fam$scientificName=row.names(pcoa_data_fam)
+row.names(pcoa_data_fam) <- NULL
+pcoa_data_fam$col = ifelse(pcoa_data_fam$scientificName %in% really_soli,'red','black')
+
+with(pcoa_data_fam %>% arrange((col)), plot(eigen1,eigen2,col=col))
+
+
 
 #make data.frame with phylogenetic richness and div
 #(see how they correlate with species-neutral div metrics)
@@ -172,6 +236,13 @@ phylo_div = tibble(phylo_rich) %>%
   left_join(tibble(phylo_simp) 
             %>% mutate(scientificName = names(phylo_simp))) %>%
   dplyr::select(scientificName, everything())
+
+#add information about the identity of plant taxa visited
+plant_id = phylo_div %>%
+  left_join(pcoa_data %>% select(-col) %>% rename(eigen1_plantGenus = eigen1, eigen2_plantGenus=eigen2)) %>% #join with genus-level pcca data
+  left_join(pcoa_data_fam %>% select(-col) %>% rename(eigen1_plantFam = eigen1, eigen2_plantFam=eigen2)) #join with family-level pca data
+#double check no rows added:
+nrow(plant_id)==nrow(phylo_div)
 
 #next get measures of simpson diversity and n
 div_genus = globi %>% group_by(scientificName,plant_genus) %>%
@@ -183,15 +254,19 @@ div_fam = globi %>% group_by(scientificName,plant_family) %>%
   rename(n=sample_size)
 
 
-div_df = phylo_div %>%
+div_df = plant_id %>%
   left_join(div_genus) %>%left_join(div_fam)
-  
+#again, double check that  no rows were added:
+nrow(div_df) == nrow(plant_id)
+
+
 with(div_df,plot(phylo_simp,simpson_genus))
 with(div_df,plot(phylo_simp,simpson_fam))
 with(div_df,plot(phylo_simp,phylo_rich)) #not good
 with(div_df,plot(phylo_simp,n))
 with(div_df,plot(phylo_rich,rich_genus))
 with(div_df,plot(phylo_rich,rich_fam))
+with(div_df,plot(phylo_rich,eigen1_plantFam))
 
 
 # write_csv(div_df %>% rename(n_globi = n),'modeling_data/globi_phyloDiv.csv')

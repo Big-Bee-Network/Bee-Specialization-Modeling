@@ -167,7 +167,6 @@ bee_area = bees_hasFakeData %>%
 
 
 
-
 ##
 #double check the convex hull code by plotting
 a=bees_filtered_distinct %>% 
@@ -194,6 +193,9 @@ bee_geographic2 = bees_filtered_distinct %>%
   rename(scientificName = finalName)
 with(bee_geographic2,plot(log(n_chesshire),area_ha))
 
+bee_geographic2 %>%
+  filter(grepl("Nomada park",scientificName))
+
 
 mean_doy=bees_filtered_distinct %>%
   group_by(finalName) %>%
@@ -204,14 +206,14 @@ mean_doy=bees_filtered_distinct %>%
   mutate(flight_season = quant90-quant10)
 
 
-
-
 #add day of year to bee_geographic
 bee_geographic = bee_geographic2 %>%
   left_join(mean_doy %>% rename(scientificName = finalName))
 
 
+
 # write_csv(bee_geographic,'modeling_data/chesshire2023_beeArea.csv')
+
 # ##
 # # Data
 # sp = my_list[[10]]

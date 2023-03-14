@@ -8,10 +8,15 @@ chesshire = read_excel('modeling_data/Chesshire2023-appendixs3.xlsx') %>%
          providedName = 'Step 1: Original Scientific Name in Data Download',
          secondRoundName = "Step 2: Chosen Name after comparing with DL List and/or first round of manual sleuthing",
          reasonSecondRound = "Reason for Initial Name Change (or no change)",
-         JohnAscherReason = "John Notes and Final Decision")
+         JohnAscherReason = "John Notes and Final Decision") %>%
+  filter(finalName %in% chesshire2$finalName) #only keeps bees that were in the final, contiguous usa dataset
 str(chesshire)
 unique(chesshire$reasonSecondRound)
 
+"Anthophorula ignota" %in% chesshire2$finalName
+"Anthophorula ignota" %in% chesshire$finalName
+
+# View(chesshire[!chesshire$finalName %in% chesshire2$finalName,])
 
 # let's look at records where the secondRoundName doesn't equal the final  name
 # these are most likely records where John Ascher disagreed with the DiscoverLife name
@@ -32,5 +37,5 @@ final = chesshire %>%
 #how many are informed by geography?
 nrow(geo_informed)
 
-  
+
 # write_csv(final,'modeling_data/Chesshire2023_nameAlignment-geoUpdate.csv')

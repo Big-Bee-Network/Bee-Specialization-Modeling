@@ -13,7 +13,7 @@ wfo_data = vroom("/Volumes/Seagate/globi_13dec2022/data/WFO_Backbone/classificat
 #   mutate(scientificName2 = paste(genus,specificEpithet,infraspecificEpithet)) %>% # add a field with a scientific name for subspecies
 #   mutate(scientificName3 = paste(genus,specificEpithet))
 
-#these genus is not in wfo, and I looked it up manually in catalog of life :
+#this genus is not in wfo, and I looked it up manually in catalog of life :
 not_in_wfo = data.frame(fowler = c('Salazaria'),
                         accepted = c("Scutellaria"),
                         family = c("Lamiaceae"),
@@ -28,12 +28,13 @@ add_chesshire = data.frame(providedName = chesshire1$finalName[!chesshire1$final
 chesshire = bind_rows(chesshire1,add_chesshire)
 
 # fowler considers bees to be specialists if they use pollen from genera in two different families
-#and we don't. we're going to remove these bees from the fowler list (and won't consider them discrepancies)
+# and we don't. we're going to remove these bees from the fowler list (and won't consider them discrepancies)
 generalists_fowler = c("Andrena candidiformis", "Anthidium mormonum", "Dufourea cuprea",
                        "Habropoda laboriosa", "Hesperapis ilicifoliae", "Megachile perihirta",
                        "Peponapis michelbacherorum",
                        "Perdita fieldi","Perdita obscurata",
                        "Pseudopanurgus virginicus", "Xenoglossa kansensis","Florilegus condignus")
+
 
 #note: some bees on this list are duplicated, if they occur in multiple regions (eg both eastern and central usa)
 fowler <- read_csv("modeling_data/fowler_hostplants.csv") %>%
@@ -123,8 +124,7 @@ hosts_long %>% filter(is.na(new_host))
 hosts_long %>% filter(scientificName=='Andrena melanochroa')
 
 # check that for species with multiple genera, the genera are all in the same family
-# update species names with taxonstand
-# update family names with wvcp?
+# update species names with wfo
 # then check genera are in the same fam
 update_these_names = with(hosts_long, unique(new_host))
 
@@ -199,6 +199,13 @@ fowler_formatted = hosts_long %>% rename(old_plant = new_host) %>%
 
 nrow(fowler_formatted) == nrow(hosts_long)
 
+#double check that with the name update, no genera in different families
+dupes_f = fowler_formatted$scientificName[duplicated(fowler_formatted$scientificName)]
+View(fowler_formatted %>% filter(scientificName %in% dupes_f))
+#looks like there are none... this vector should be empty:
+which(fowler_formatted %>%
+  split(.$scientificName) %>% purrr::map_lgl(function(df) n_distinct(df$host_family)!=1))
+
 #next we need to update the bee names using chesshire's methods
 fowler_names_toAlign = data.frame(providedName = unique(fowler_formatted$scientificName))
 
@@ -222,7 +229,13 @@ diet_breadth2 = diet_breadth %>%
 # write_csv(fowler_formatted2,'modeling_data/fowler_formatted-7march2023.csv')
 # write_csv(diet_breadth2,'modeling_data/bee_diet_breadth-7march2023.csv')
 
-##old method of bee name alignment
+
+
+
+
+
+
+##old 
 #do this using name alignment template
 #save file for name alignment on github
 fowler_names_toAlign = data.frame(scientificName = unique(fowler_formatted$scientificName))

@@ -8,11 +8,12 @@ library(randomForest)
 library(readxl)
 library(furrr)
 library(gridExtra)
+library(pROC)
 
 # load the globi data
 # exclude interactions of non-US bees
 # update the plant family names
-
+set.seed(111342)
 ##analysis
 # for bees on the Jarrod Fowler lists, what % visit their host plants?
 # for bees [classified as polylectic in ms dataset, what % visit their host plants?]]
@@ -21,229 +22,137 @@ library(gridExtra)
 
 
 # load the globi data
-# this is a file with the globi records and plant names are updated (though not plant families)
-globi_r = read_csv('modeling_data/globi_occ_names_updated-19dec2022.csv')
-globi_r %>% filter(sourceTaxonRank=='variety') %>% distinct(scientificName)
-data.frame(globi_r %>% filter(is.na(sourceTaxonRank)) %>% distinct(scientificName))
-
 #this data file has bee and plant names updated, and only american bees
-globi = vroom('modeling_data/globi_american_native_bees.csv')
+globi = vroom("modeling_data/globi_allNamesUpdated.csv") %>%
+  mutate(bee_genus = sub(' .*',"",scientificName))
+
+#globi_degree is with the species-level data
+globi_degree =read_csv("modeling_data/globi_speciesLevelFinal.csv")
 
 #also load the fowler data
-diet_breadth = read_csv('modeling_data/bee_diet_breadth.csv')
+fowler_formatted = read_csv('modeling_data/fowler_formatted-7march2023.csv')
+diet_breadth = read_csv('modeling_data/bee_diet_breadth-7march2023.csv')
+
+
 specialists = diet_breadth[diet_breadth$diet_breadth=='specialist',]$scientificName
-fowler_formatted = read_csv('modeling_data/fowler_formatted-19dec2022.csv')
+globi_u=globi %>% left_join(diet_breadth %>% distinct(scientificName,diet_breadth)) %>%
+  mutate(diet_breadth = ifelse(is.na(diet_breadth),'generalist',diet_breadth))
 
-# Let's exclude interactions of non-US bees
-
-#first, load list of US bee species from discover life - the text file is from this link: 
-# https://www.discoverlife.org/nh/cl/counts/Apoidea_species.html
-usa_bees = read_table('modeling_data/Apoidea_species.txt',col_names=F) %>%
-  rename(genus = X1, epithet = X2) %>%
-  mutate(scientificName = paste(genus,epithet))
-
-#i don't think the discover life list is complete, 
-# so let's also check if these species are US bees by seeing if there
-# are at least 5 records in gbif
-
-#get the list of species
-slist = unique(sort(globi_r$scientificName))
-
-#remove morpho species and species groups
-(sp_remove1 = slist[grepl('sp\\.',slist) | grepl('/',slist) | grepl('aff\\.',slist) | grepl('nr\\.',slist) | grepl('unk1',slist)])
-these_are_genera = which(strsplit(slist," ") %>% purrr::map_lgl(function(str_vec) length(str_vec)==1))
-
-sp_remove = c(slist[these_are_genera],sp_remove1)
-
-slist_globi = slist[!slist %in% sp_remove]
-
-american1 = slist_globi[slist_globi %in% usa_bees$scientificName]
-plan(multisession, workers=6)
-# pull the US occurrence records of these species from gbif
-"Ceratina calcarata/dupla"  %in% slist_globi[!slist_globi %in% usa_bees$scientificName]
-
-# bee_occ = slist_globi[!slist_globi %in% usa_bees$scientificName] %>% future_map(function(sci_name){
-#   gbif_list = occ_search(scientificName = sci_name,country='US',limit=25,hasCoordinate = T)
-# 
-#   if(is.null(gbif_list$data)) {
-#     return(gbif_list$data)
-#   }else{
-#     return( gbif_list$data %>% mutate(query=sci_name) %>%
-#               dplyr::select(query,everything()))
-#   }
-# 
-# },.options = furrr_options(seed=T))
-# #
-# saveRDS(bee_occ,'modeling_data/bee_occ_usa.rds')
-bee_occ = readRDS('modeling_data/bee_occ_usa.rds')
-r_obj=bee_occ[[2]]
-
-which(bee_occ %>% map_lgl(is.null))
-nrow(r_obj)
-r_obj$query
-
-#to be conservative let's say a bee ha to have at least 5 occurrence records in the US
-american_bees_tokeep=which(bee_occ %>% purrr::map_lgl(function(r_obj) {
-  
-  #bee occurs in america if the object is not null (ie 0 occurrence records in the US)
-  condition1 = !is.null(r_obj)
-  
-  #and there are at least 5 occurrence records
-  if(condition1){
-    condition2 = nrow(r_obj)>5
-  }else{
-    condition2 = F
-  }
-  condition1 & condition2
-}))
-
-#get the species names
-unknown_bees = slist_globi[!slist_globi %in% usa_bees$scientificName]
-unknown_bees[american_bees_tokeep]
-american2 = unknown_bees[american_bees_tokeep]
-
-
-#let's exclude non-native species
-nonnative = read_csv("/Users/colleen/Dropbox/My Mac (MacBook-Air.local)/Downloads/BeeGap_Taxonomy and General Traits.csv") %>% 
-  filter(`Native?` == "N") %>% 
-  distinct(Genus,Species) %>%
-  mutate(scientificName = paste(Genus,Species))
-
-#list below from Russo 2016
-# https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5198217/
-more_nonnatives = c("Hylaeus variegates", "Hylaeus albonitens",
-                    "Hylaeus hyalinatus", "Hylaeus leptocephalus"," Hylaeus punctatus",
-                    "Hylaeus strenuus","Andrena wilkella", "Halictus tectus", "Lasioglossum eleutherense",
-                    "Lasioglossum leucozonium", "Lasioglossum zonulum", "Anthidium manicatum",
-                    "Anthidium oblongatum", "Chelostoma campanularum", "Coelioxys coturnix", "Heriades truncorum", "Hoplitis anthocopoides",
-                    "Lithurgus chrysurus", "Lithurgus scabrosus", "Megachile apicalis", "Megachile chlorura", "Megachile concinna", "Megachile ericetorum",
-                    "Megachile fullawayi", "Megachile lanata",	"Megachile rotundata", "Megachile sculpturalis", "Osmia caerulescens",
-                    "Osmia cornifrons", "Osmia taurus", "Anthophora villosula", "Apis mellifera", "Ceratina cobaltina",
-                    "Ceratina dallatorreana", "Euglossa dilemma", "Plebia frontalis", "Xylocopa appendiculata")
-#still some bees left to check:
-check_native = data.frame(scientificName = american2) %>% 
-  filter(!scientificName %in% c(nonnative$scientificName,more_nonnatives))
-
-# write_csv(check_native,'modeling_data/check_native_status.csv')
-even_more_nonnatives = read_csv('modeling_data/unknown_native_status.csv') %>%
-  filter(status == 'introduced')
-
-introduced_bees = c(even_more_nonnatives$scientificName,more_nonnatives,nonnative$scientificName)
-
-#
-american_sp_keep = c(american1, american2)[!c(american1,american2) %in% introduced_bees]
-globi_usa = globi_r %>% filter(scientificName %in% american_sp_keep) 
-
-
-globi_u=globi_usa 
+#double check no increase in the number of rows
+nrow(globi) ==nrow(globi_u)
 
 #how many records total in our data
 paste0('our data has ', nrow(globi_u),' records total, with ', n_distinct(globi_u$scientificName),' bee species, and ',
        n_distinct(globi_u$plant_genus), ' plant genera')
-#records of specialists 
-globi_u
-# for bees on the fowler list, how accurate are predictions and how does this change with N?
 
-# start with threshold of 0 observations
-threshold_n = 0
-
-bigN_bees=globi_u %>% 
-  group_by(scientificName) %>% 
-  summarize(n=n()) %>% 
-  filter(n>=threshold_n)
-globi_summ = globi_u %>% 
-  filter(scientificName %in% bigN_bees$scientificName) %>%
-  group_by(scientificName,bee_family,plant_genus,plant_family) %>% 
-  summarize(n_genus=n(),n_citations=n_distinct(referenceCitation)) 
-
-#predict whether a bee is a specialist or a generalist
-#calculate the number of plant families each bee species is observed visiting
-total_obs = bigN_bees
-
-# degree_by_fam 
-degree_by_fam = globi_summ %>% 
-  group_by(scientificName,plant_family) %>%
-  summarize(n_family = sum(n_genus),n_citations=sum(n_citations)) %>%
-  summarize(degree_family = n_distinct(plant_family), 
-            degree5_family = sum(n_family >= 5), 
-            simpson_fam = diversity(n_family,index='invsimpson'),
-            simpson_citation_fam =  diversity(n_citations,index='invsimpson'))# %>%
-
-#calculate the number of plant genera each bee species is observed visiting
-degree_by_genus = globi_summ %>%
-  group_by(scientificName,bee_family) %>%
-  summarize(degree_genus = n_distinct(plant_genus), 
-            degree5_genus = sum(n_genus >= 5), 
-            simpson_genus = diversity(n_genus,index='invsimpson'),
-            simpson_citation_genus = diversity(n_citations,index='invsimpson')) 
-with(degree_by_genus,plot(simpson_genus,simpson_citation_genus))
-with(degree_by_fam,plot(simpson_fam,simpson_citation_fam))
-
-
-globi_degree = degree_by_fam %>% left_join(degree_by_genus) %>% 
-  left_join(diet_breadth %>% 
-              distinct(scientificName,diet_breadth,diet_breadth_detailed)) %>%
-  mutate(diet_breadth = ifelse(is.na(diet_breadth),'generalist',diet_breadth),
-         diet_breadth_detailed = ifelse(is.na(diet_breadth_detailed),'generalist',diet_breadth_detailed)) %>%
-  left_join(total_obs)
 
 #get # of records of pollen specialists and generalists
-sum(globi_degree$n)
+sum(globi_degree$n_globi); n_distinct(globi_u$scientificName); nrow(globi_degree)
 with(globi_degree %>% filter(diet_breadth=="specialist"),
-     paste("there are", sum(n), "records of specialist bees from", n_distinct(scientificName), "species"))
+     paste("there are", sum(n_globi), "records of specialist bees from", n_distinct(scientificName), "species"))
 with(globi_degree %>% filter(diet_breadth=="generalist"),
-     paste("there are", sum(n), "records of generalist bees from", n_distinct(scientificName), "species"))
+     paste("there are", sum(n_globi), "records of generalist bees from", n_distinct(scientificName), "species"))
 
-nrow(degree_by_fam) == nrow(globi_degree)
+#some exploratory plotting
 with(globi_degree,boxplot(simpson_fam~diet_breadth_detailed))
 with(globi_degree,boxplot(simpson_fam~diet_breadth))
 with(globi_degree,boxplot(simpson_genus~diet_breadth))
 
 
-#only include bees in the data with at least n_threshold observations
-new_n_threshold = 20
-bigN_bees125=globi_u %>% 
-  group_by(scientificName) %>% 
-  summarize(n=n()) %>% filter(n>=new_n_threshold)
-globi_summ125 = globi_u%>% 
-  filter(scientificName %in% bigN_bees125$scientificName) %>%
-  group_by(scientificName,bee_family,plant_genus,plant_family) %>% 
-  summarize(n_genus=n(),n_citations=n_distinct(sourceCitation)) 
+#let's divide the dataset into eastern and western bees
+dividing_long = -89.912506
+globi_degree$region = ifelse(globi_degree$med_long > dividing_long,'east','west')
+globi_degree %>%filter(scientificName =='Andrena erigeniae') %>% select(region)
+globi_degree %>%filter(scientificName =='Diadasia diminuta') %>% select(region)
 
-# predict whether a bee is a specialist or a generalist
-# calculate the number of plant families each bee species is observed visiting
-total_obs = bigN_bees125
+##remove columns from the dataset we don't want to model
+degree_smaller = globi_degree %>% select(-c('spherical_geometry','n_globi','bee_genus','bee_family','mean_doy','diet_breadth_detailed',
+                                            'rich_genus','simpson_genus','rich_fam','simpson_fam','area_m2',"quant10","quant90"))
 
-# degree_by_fam 
-degree_by_fam = globi_summ125 %>% 
-  group_by(scientificName,plant_family) %>%
-  summarize(n_family = sum(n_genus),n_citations=sum(n_citations)) %>%
-  summarize(degree_family = n_distinct(plant_family), 
-            degree5_family = sum(n_family >= 5), 
-            simpson_fam = diversity(n_family,index='invsimpson'),
-            simpson_citation_fam =  diversity(n_citations,index='invsimpson'))# %>%
+#divide the dataset into training data and testing data
+training_globi = degree_smaller %>% filter(region=='west')
+testing_globi = degree_smaller %>% filter(region=='east')
 
-#calculate the number of plant genera each bee species is observed visiting
-degree_by_genus = globi_summ125 %>%
-  group_by(scientificName,bee_family) %>%
-  summarize(degree_genus = n_distinct(plant_genus), 
-            degree5_genus = sum(n_genus >= 5), 
-            simpson_genus = diversity(n_genus,index='invsimpson'),
-            simpson_citation_genus = diversity(n_citations,index='invsimpson')) 
-with(degree_by_genus,plot(simpson_genus,simpson_citation_genus))
-with(degree_by_fam,plot(simpson_fam,simpson_citation_fam))
+##make vectors of eastern and western bees
+eastern_bees = globi_degree[globi_degree$region=='east',]
+western_bees = globi_degree[globi_degree$region=='west',]
+n_distinct(eastern_bees)
+n_distinct(western_bees)
 
-globi_degree125 = degree_by_fam %>% left_join(degree_by_genus) %>% 
-  left_join(diet_breadth %>% 
-              distinct(scientificName,diet_breadth,diet_breadth_detailed)) %>%
-  mutate(diet_breadth = ifelse(is.na(diet_breadth),'generalist',diet_breadth),
-         diet_breadth_detailed = ifelse(is.na(diet_breadth_detailed),'generalist',diet_breadth_detailed)) %>%
-  left_join(total_obs) %>%
-  mutate(diet_breadth = as.factor(diet_breadth))
+#
+rf_sp = randomForest(as.factor(diet_breadth) ~ .,data= training_globi %>% select(-c(scientificName,region)),importance = T,na.action=na.omit,auc=T)
+pred_east <- predict(rf_sp, testing_globi %>% dplyr::select(-c(scientificName,diet_breadth,region)))
+varImpPlot(rf_sp)
 
+
+testing_globi$prediction <- pred_east
+testing_globi$prediction_correct <- testing_globi$diet_breadth==testing_globi$prediction
+
+#overall accuracy
+mean(testing_globi$prediction_correct)
+mean(testing_globi[testing_globi$diet_breadth=="specialist",]$prediction_correct)
+mean(testing_globi[testing_globi$diet_breadth=="generalist",]$prediction_correct)
+
+testing_globi %>% select(diet_breadth,prediction,prediction_correct) 
+
+
+#####################################
+##let's also try dividing the data phylogenetically
+##remove columns from the dataset we don't want to model
+degree_smaller2 = globi_degree %>% 
+  select(scientificName,diet_breadth,bee_family, phylo_simp, flight_season, phylo_rich, med_doy,n_chesshire, area_ha, med_long,med_lat) %>%
+  filter(!is.na(med_doy))
+
+training_phy = degree_smaller2 %>% filter(bee_family %in% c("Andrenidae","Melittidae","Halictidae","Colletidae"))
+testing_phy = degree_smaller2 %>% filter(bee_family %in% c("Apidae","Megachilidae"))
+nrow(training_phy)
+nrow(testing_phy)
+
+rf_phy = randomForest(as.factor(diet_breadth) ~ .,data= training_phy %>% select(-c(scientificName,bee_family)),importance = T,na.action=na.omit,auc=T)
+pred_group2 <- predict(rf_phy,testing_phy %>% select(-c(scientificName,bee_family)))
+varImpPlot(rf_phy)
+
+##assess prediction accuracy
+testing_phy$prediction <- pred_group2
+testing_phy$prediction_correct <- testing_phy$diet_breadth==testing_phy$prediction
+testing_phy %>% select(diet_breadth,prediction,prediction_correct) 
+testing_phy %>% filter(is.na(prediction_correct)) %>% select(diet_breadth,prediction,prediction_correct) 
+
+
+#overall accuracy
+mean(testing_phy$prediction_correct)
+mean(testing_phy[testing_phy$diet_breadth=="specialist",]$prediction_correct)
+mean(testing_phy[testing_phy$diet_breadth=="generalist",]$prediction_correct)
+
+
+
+
+#########################
+# Katja is curious what variables come out as important if we just throw in all the globi data
+# let's try that:
+eastern_bees = globi_degree[globi_degree$region=='east',]
+
+str(globi_u)
 #run the random forest model
-rf_125 = randomForest(as.factor(diet_breadth) ~ degree_family + degree_genus + simpson_fam + simpson_genus + bee_family + n+ simpson_citation_genus+simpson_citation_fam,data = globi_degree125,importance = T)
+ind_test = globi_u %>% select(diet_breadth,"sourceInstitutionCode","sourceBasisOfRecordName",
+                              'interactionTypeName',"targetTaxonOrderName","targetTaxonClassName",
+                              "decimalLatitude","decimalLongitude","eventDate",
+                              "bee_family","bee_genus","plant_genus","plant_species","plant_family")
+#how many na's for each column
+colMeans(is.na(ind_test))
 
+
+rf_ind = randomForest(as.factor(diet_breadth) ~ .,data= ind_test,importance = T,na.action=na.omit)
+rf_ind$importance
+
+# pdf('figures/var_importance_rf.pdf',width =13)
+varImpPlot(rf_ind)
+# dev.off()
+
+
+
+
+##old
 # par(mfrow=c(1,2))
 # rf_roc150 = roc(as.factor(globi_degree$diet_breadth),rf_150$votes[,2])
 # plot(rf_roc,main = '20 obs needed')

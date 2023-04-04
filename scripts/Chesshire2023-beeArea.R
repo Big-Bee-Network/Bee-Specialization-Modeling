@@ -10,8 +10,10 @@ library(BBmisc)
 library(data.table)
 library(readxl)
 library(lubridate)
+library(giscoR)
+library(tigris)
+library(furrr)
 
-#
 my_dir = '/Volumes/Seagate/Chesshire2023/'
 list.files(my_dir)
 
@@ -30,11 +32,62 @@ bee_names = bees %>% distinct(scientificName, finalName) %>%
 rm(bees)
 #upload data with records for all of NA
 #to be used for estimating extent of occurrence
-allNA = fread(paste0(my_dir,"NorAmer_highQual_only_ALLfamilies.csv"))#this contains records records from Mexico, Canada, Alaska 
+allNA = fread(paste0(my_dir,"NorAmer_highQual_only_ALLfamilies.csv")) %>% #this contains records records from Mexico, Canada, Alaska 
+  mutate(lat_long = paste(finalLatitude,finalLongitude))
+
+#exclude observations not in North America
+distinct_coords = allNA %>% distinct(lat_long,finalLatitude,finalLongitude)
+
+#load map 
+na_map <- gisco_get_countries(country = c("United States of America",'Canada',"Mexico"),resolution = 01)
+#also get low-res NA map for plotting
+na_map_lowRes <- gisco_get_countries(country = c("United States of America",'Canada',"Mexico"))
+world <- gisco_get_countries()
+pnts2 <- distinct_coords %>%
+  mutate(x = finalLongitude, y = finalLatitude)
+point_sf = st_as_sf(pnts2, coords = c("x", "y"), 
+                    crs = 4326, agr = "constant")
+sf_filter = st_filter(point_sf,na_map)
+
+#how many were removed?
+nrow(data.frame(sf_filter)); nrow(distinct_coords)
+nrow(distinct_coords)-nrow(data.frame(sf_filter))
+
+filtered_data = data.frame(sf_filter) %>%
+  filter(finalLongitude<9)
+excluded_data = distinct_coords %>% filter(!lat_long %in% filtered_data$lat_long)
+
+#plot data-points excluded
+ggplot(world) +
+  geom_sf(fill = "blue", col = "white") +
+  theme_minimal()+
+  geom_point(data=excluded_data,aes(x=finalLongitude,y=finalLatitude))
+
+
+
+#let's also exclude data in hawaii, american samoa etc
+places_to_exclude = c("Hawaii","United States Virgin Islands" ,"Puerto Rico","American Samoa","Guam","Commonwealth of the Northern Mariana Islands")
+
+islands <- states(cb=F) %>% filter(NAME %in% places_to_exclude)
+
+islands_trans = st_transform(islands,4326)
+islands_filter = st_filter(point_sf,islands_trans)
+filtered_data2 = filtered_data %>% filter(!lat_long %in% islands_filter$lat_long)
+
+#plot data points included
+ggplot(na_map_lowRes) +
+  geom_sf(fill = "blue", col = "white") +
+  theme_minimal()+
+  geom_point(data=filtered_data2,aes(x=finalLongitude,y=finalLatitude))
+
+na <- map_data("world", region = c("Mexico","Canada")) %>% bind_rows(map_data("state"))
+ggplot(na, aes(x = long, y = lat))+
+  geom_polygon(aes( group = group, fill = region),show.legend = F)+
+  geom_point(data=filtered_data2[1:100,] ,aes(x=finalLongitude,y=finalLatitude))
+
 
 # get rid of non-natives 
 nonnative=read_excel('modeling_data/nonnative_bees.xlsx') 
-
 #filter North American dataset to just be bees in bee_names
 #and just be native species
 #also add bee average collection date
@@ -43,7 +96,8 @@ bees_filtered = allNA  %>% # only bees we have aligned names for
   filter(!finalName %in% nonnative$scientificName) %>%  #get rid of non-natives
   filter(finalName %in% bee_names$finalName) %>%
   mutate(fdate = ifelse(grepl('/',eventDate),as.character(mdy(eventDate)),as.character(as.Date(eventDate)))) %>%
-  mutate(doy = yday(as.character(fdate)))
+  mutate(doy = yday(as.character(fdate))) %>%
+  filter(lat_long %in% filtered_data2$lat_long) #filters to just be bees in usa/canada/mexico
 
 n_distinct(bees_filtered$finalName)
 bees_filtered[1498290,]
@@ -62,6 +116,154 @@ bees_filtered_distinct = bees_filtered %>%
   distinct(finalName,finalLatitude,finalLongitude,fdate,doy) 
 nrow(bees_filtered)#
 nrow(bees_filtered_distinct)
+
+
+#first, look for outliers in the data
+library(CoordinateCleaner)
+bee_bigN = bees_filtered_distinct %>% group_by(finalName) %>% summarize(n=n()) %>%
+  filter(n>=7)
+
+df_outlier_test = bees_filtered_distinct %>%
+  select(finalName, finalLongitude,finalLatitude) %>%
+  filter(finalName %in% bee_bigN$finalName) %>%
+  rename(species = finalName,decimallongitude = finalLongitude, decimallatitude=finalLatitude)
+a=df_outlier_test %>%
+  split(.$species)
+df=a[[1]]
+##this takes a long time to run:
+plan(multisession, workers = 6)
+
+check_outliers_ls = df_outlier_test %>%
+  split(.$species) %>%
+  future_map(function(df){
+    
+    outliers = cc_outl(df, method='distance',value = 'flagged')
+    df %>% mutate(test_passed=outliers)
+  
+    })
+check_outliers = check_outliers_ls %>% bind_rows
+
+
+##filter data to just be species with flagged specimens and plot
+have_outliers = check_outliers %>% group_by(species) %>%
+  summarize(prop_passing = mean(test_passed), sum_flagged=sum(test_passed==F)) %>%
+  filter(prop_passing < 1.00)
+nrow(have_outliers)
+so_many_flagged = have_outliers %>% filter(sum_flagged>10) #hmm, some have thousands that are flagged
+
+i=1
+random_is = sample(1:nrow(have_outliers),100)
+random_is_ordered = random_is[order(random_is)]
+
+for(i in random_is_ordered){
+  sp = have_outliers$species[i]
+  df = check_outliers %>% filter(species == sp) %>%
+    mutate(my_col = ifelse(test_passed,adjustcolor('black',.5),'red'))
+  df_rearranged = df %>% arrange(desc(my_col))
+  # with(df %>% arrange(desc(my_col)),
+  #      plot(decimallongitude,decimallatitude, col=my_col,pch=16 ,
+  #      main=sp))
+  
+  my_map = ggplot(na, aes(x = long, y = lat))+
+    geom_polygon(aes( group = group, fill = region),show.legend = F)+
+    scale_fill_manual(values=rep('darkgreen',51))+
+    geom_point(data=df_rearranged ,aes(x=decimallongitude,y=decimallatitude,col=my_col))+
+    scale_color_manual(values=c('black','red'))+theme_minimal()+
+    ggtitle(sp)
+
+  print(my_map)
+  
+}
+
+
+##based on these plots I don't think the cc_outl function is working...
+for(i in 1:nrow(so_many_flagged)){
+  sp = so_many_flagged$species[i]
+  df = check_outliers %>% filter(species == sp) %>%
+    mutate(my_col = ifelse(test_passed,adjustcolor('black',.5),'red'))
+  df_rearranged = df %>% arrange(desc(my_col))
+ 
+  my_map = ggplot(na, aes(x = long, y = lat))+
+    geom_polygon(aes( group = group, fill = region),show.legend = F)+
+    scale_fill_manual(values=rep('darkgreen',51))+
+    geom_point(data=df_rearranged ,aes(x=decimallongitude,y=decimallatitude,col=my_col))+
+    scale_color_manual(values=c('black','red'))+theme_minimal()+
+    ggtitle(sp)
+  
+  print(my_map)
+  
+}
+
+##try writing my own function
+a=df_outlier_test %>%
+  split(.$species)
+df=a[[132]]
+
+my_map = ggplot(na, aes(x = long, y = lat))+
+  geom_polygon(aes( group = group, fill = region),show.legend = F)+
+  scale_fill_manual(values=rep('darkgreen',51))+
+  geom_point(data=df ,aes(x=decimallongitude,y=decimallatitude))+
+  scale_color_manual(values=c('black','red'))+theme_minimal()+
+  ggtitle(sp)
+my_map
+
+
+library(geodist)
+
+get_outliers = function(df){
+  format_df = df %>% select(decimallongitude,decimallatitude) %>% rename(longitude=decimallongitude,latitude = decimallatitude)
+  dist_mat = geodist(format_df, measure='haversine') 
+  min_dists = dist_mat %>% apply(1,function(row) min(row[row!=0])  )/1000
+  min_dists[min_dists>1000]
+  flag_i = which(min_dists>1000)
+  df$test_passed <- TRUE
+  df[flag_i,]$test_passed <- F
+  
+  return(df)
+}
+first_ten_sp = unique(df_outlier_test$species)[1:100]
+check_outliers_ls = df_outlier_test %>% filter(species %in% first_ten_sp) %>% split(.$species) %>%
+  future_map(get_outliers)
+
+check_outliers = check_outliers_ls %>% bind_rows
+have_outliers = check_outliers %>% group_by(species) %>%
+  summarize(prop_passing = mean(test_passed), sum_flagged=sum(test_passed==F)) %>%
+  filter(prop_passing < 1.00)
+nrow(have_outliers)
+so_many_flagged = have_outliers %>% filter(sum_flagged>10) #hmm, some have thousands that are flagged
+
+i=1
+random_is = sample(1:nrow(have_outliers),100)
+random_is_ordered = random_is[order(random_is)]
+random_is_ordered=1:nrow(have_outliers)
+for(i in random_is_ordered){
+  sp = have_outliers$species[i]
+  df = check_outliers %>% filter(species == sp) %>%
+    mutate(my_col = ifelse(test_passed,adjustcolor('black',.5),'red'))
+  df_rearranged = df %>% arrange(desc(my_col))
+  # with(df %>% arrange(desc(my_col)),
+  #      plot(decimallongitude,decimallatitude, col=my_col,pch=16 ,
+  #      main=sp))
+  
+  my_map = ggplot(na, aes(x = long, y = lat))+
+    geom_polygon(aes( group = group, fill = region),show.legend = F)+
+    scale_fill_manual(values=rep('darkgreen',51))+
+    geom_point(data=df_rearranged ,aes(x=decimallongitude,y=decimallatitude,col=my_col))+
+    scale_color_manual(values=c('black','red'))+theme_minimal()+
+    ggtitle(sp)
+  
+  print(my_map)
+  
+} 
+
+
+
+# plot data and convex-hull
+ggplot(df %>% arrange(desc(my_col)), aes(finalLatitude, finalLongitude, colour=my_col, fill=my_col)) + 
+  geom_point() #+ 
+  geom_density2d(alpha=.5) + 
+  labs(x = "Latitude", y = "Longitude")#+ 
+  geom_polygon(data=coords, alpha=.2)
 
 #split dataset - bees with 4 or more records
 bees_4ormore = bees_filtered_distinct %>% group_by(finalName) %>%

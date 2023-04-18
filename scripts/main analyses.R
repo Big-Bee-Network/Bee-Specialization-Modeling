@@ -6,14 +6,16 @@ library(sf)
 library(vegan)
 library(randomForest)
 library(readxl)
+library(writexl)
 library(furrr)
 library(gridExtra)
 library(pROC)
+library(pROC)
+library(ROCR)
 
 # load the globi data
-# exclude interactions of non-US bees
-# update the plant family names
 set.seed(111342)
+
 ##analysis
 # for bees on the Jarrod Fowler lists, what % visit their host plants?
 # for bees [classified as polylectic in ms dataset, what % visit their host plants?]]
@@ -27,7 +29,10 @@ globi = vroom("modeling_data/globi_allNamesUpdated.csv") %>%
   mutate(bee_genus = sub(' .*',"",scientificName))
 
 #globi_degree is with the species-level data
-globi_degree =read_csv("modeling_data/globi_speciesLevelFinal.csv")
+globi_degree =read_csv("modeling_data/globi_speciesLevelFinal.csv")%>% #let's remove the columns we don't care about
+  select(-c(bee_genus,diet_breadth_detailed,rich_genus,rich_fam,area_m2,spherical_geometry,mean_doy,quant10,quant90,eigen1,eigen2)) %>%
+  mutate(diet_breadth = as.factor(diet_breadth))
+
 
 #also load the fowler data
 fowler_formatted = read_csv('modeling_data/fowler_formatted-7march2023.csv')
@@ -54,19 +59,513 @@ with(globi_degree %>% filter(diet_breadth=="generalist"),
      paste("there are", sum(n_globi), "records of generalist bees from", n_distinct(scientificName), "species"))
 
 #some exploratory plotting
-with(globi_degree,boxplot(simpson_fam~diet_breadth_detailed))
-with(globi_degree,boxplot(simpson_fam~diet_breadth))
-with(globi_degree,boxplot(simpson_genus~diet_breadth))
+with(globi_degree,boxplot(phylo_simp~diet_breadth))
+with(globi_degree,boxplot(phylo_rich~diet_breadth))
 
 
-#let's divide the dataset into eastern and western bees
-dividing_long = -89.912506
+#let's look at correlations btw predictor variables:
+#subset data to just be predictor variables - that don't include the phylo distance between plant genera
+predictor_df = globi_degree %>% 
+  select(phylo_rich,phylo_simp,eigen1_plantGenus,eigen2_plantGenus,eigen1_plantFam,eigen2_plantFam,
+         med_lat,med_long,n_chesshire,area_ha,med_doy,flight_season, simpson_fam,simpson_genus)
+cor_matrix = cor(predictor_df)
+heatmap(cor_matrix)
+
+##hmm phylogenetic richness is strongly  orrelated with several predictors
+cond_matrix = cor_matrix>.7 & cor_matrix !=1
+strong_cor_i = which(cond_matrix,arr.ind=T)
+row_is = as.vector(strong_cor_i[,1])
+col_is = as.vector(strong_cor_i[,2])
+
+#make data.frame with two columns - pairs of predictors that are strongly correlated
+data.frame(var1 = row.names(cor_matrix)[row_is],
+  var2 = colnames(cor_matrix)[col_is])[c(-4,-5,-7,-8),]
+
+#let's get rid of these
+vars_to_remove = c("phylo_rich","simpson_fam")
+
+colnames(predictor_df %>% select(-all_of(vars_to_remove)))
+
+##first do baseline analaysis: stratified k-fold cross validation
+colnames(globi_degree)[!colnames(globi_degree) %in% colnames(predictor_df)]
+data = globi_degree %>% 
+  select(-c(bee_family,-n_globi)) %>% 
+  select(-all_of(vars_to_remove)) %>%#remove the vars we don't need
+  mutate(diet_breadth = as.factor(diet_breadth)) #make diet breadth a factor
+k_folds = 10
+data_stratified = data %>% split(.$diet_breadth) %>%
+  map_dfr(function(df){
+    nrow_db = nrow(df) #how many bee sp with that diet breadth?
+    n_per_fold_db <- ceiling(nrow_db / k_folds) #sample size per fold? is # of bees sp with that diet breadth divided by the number of folds
+    
+    #what this line of code does: first repeats a sequence 1through k_folds a bunch of times (a bunch of times == the total sample size for each fold for that diet breadth)
+    #then it shuffles them
+    fold_assignments = sample(rep(1:k_folds, n_per_fold_db), nrow_db)
+    df %>% mutate(fold=fold_assignments)
+    
+  })
+
+#double check everything looks even
+data_stratified %>%
+  group_by(diet_breadth,fold) %>%
+  summarize(n=n())
+
+#how many bee genera in the dataset?
+head(data)
+data %>% mutate(genus = sub(" .*","",scientificName)) %>%
+  summarize(n_distinct(genus))
+
+
+# save one fold for testing and train the model on the rest of the data
+# get distribution of accuracy, importance values etc
+i=1
+1:k_folds
+i=3
+
+
+
+stratified_output_ls = 1:k_folds %>%
+  purrr::map(function(i){
+    
+    #divide the training and testing data
+    df_train = data_stratified %>% filter(fold != i) %>% select(-fold,-n_globi)
+    df_test = data_stratified %>% filter(fold == i) %>% select(-fold,-n_globi)
+    
+    rf = randomForest(diet_breadth ~ .,data= df_train %>% select(-scientificName),importance = T) #,na.action=na.omit,auc=T)
+    pred <- predict(rf, df_test %>% dplyr::select(-diet_breadth,-scientificName))
+    
+    df_test$prediction_correct <- df_test$diet_breadth==pred
+    
+    specialists_wrong = df_test[!df_test$prediction_correct & df_test$diet_breadth=='specialist',]$scientificName
+    generalists_wrong = df_test[!df_test$prediction_correct & df_test$diet_breadth=='generalist',]$scientificName
+    
+    #get auc values
+    #the test AUC
+    rf_p_test <- predict(rf, type="prob",newdata = df_test)[,2]
+    rf_pr_test <- prediction(rf_p_test, df_test$diet_breadth)
+    r_auc_test <- performance(rf_pr_test, measure = "auc")@y.values[[1]] 
+    r_auc_test    #0.956
+    
+    
+    ##auc of the training data
+    rf_p_train <- predict(rf, type="prob",newdata = df_train)[,2]
+    rf_pr_train <- prediction(rf_p_train, df_train$diet_breadth)
+    r_auc_train <- performance(rf_pr_train, measure = "auc")@y.values[[1]] 
+    r_auc_train    #0.956
+    
+    list(rf,
+    tibble(
+      fold_left_out = i,
+      overall_accuracy = mean(df_test$prediction_correct),
+      specialist_accuracy = mean(df_test[df_test$diet_breadth=="specialist",]$prediction_correct),
+      generalist_accuracy = mean(df_test[df_test$diet_breadth=="generalist",]$prediction_correct), 
+      test_auc = r_auc_test,
+      train_auc = r_auc_train,
+      specialists_wrong = list(specialists_wrong),
+      generalists_wrong = list(generalists_wrong)
+      ))
+
+    
+    
+    })
+stratified_output = stratified_output_ls %>% map_dfr(function(a_list) a_list[[2]])
+with(stratified_output %>% select(-fold_left_out,-specialists_wrong,-generalists_wrong) %>%
+  pivot_longer(everything(), names_to = 'performance_type',values_to = 'estimates'),
+  boxplot(estimates~performance_type))
+
+specialists_wrong_vec = unlist(stratified_output$specialists_wrong)
+generalists_wrong_vec = unlist(stratified_output$generalists_wrong)
+
+#let's look at variable importance
+var_importance = 1:length(stratified_output_ls) %>% map_dfr(function(i){
+  
+  #select the model from the list
+  my_rf = stratified_output_ls[[i]][[1]]
+  
+  #get variable importance
+  new_df = data.frame(my_rf$importance) %>% 
+    mutate(predictor_var = rownames(.)) %>%
+    select(predictor_var, everything()) %>%
+    mutate(model_iteration = i)
+  
+  #get rid of rownames
+  rownames(new_df) <- NULL
+  
+  return(new_df)
+  
+  
+})
+
+#get average mean decrease in accuracy and see which variables have highest average
+# then plot variation
+top_predictors = var_importance %>% 
+  group_by(predictor_var) %>% 
+  summarize(mean_importance = mean(MeanDecreaseAccuracy)) %>%
+  arrange(desc(mean_importance))
+top10 = top_predictors$predictor_var[1:10]
+top5 = top_predictors$predictor_var[1:5]
+
+#plot boxplots of top predictors
+with(var_importance %>% filter(predictor_var %in% top5),
+     boxplot(MeanDecreaseAccuracy~predictor_var))
+
+
+########Next
+#block the data phylogenetically by family
+data_phy = globi_degree %>% 
+  select(scientificName,bee_family,diet_breadth,phylo_simp,simpson_genus,eigen1_plantGenus,eigen2_plantGenus,eigen1_plantFam,eigen2_plantFam,med_lat,med_long,n_chesshire,area_ha,med_doy,flight_season) #remove the vars we don't need
+
+#look at sample sizes within family
+data_phy %>%
+  group_by(bee_family) %>%
+  summarize(n=n())
+
+phylo_blocked_output_ls = unique(data_phy$bee_family) %>%
+  purrr::map(function(fam){
+    
+    #divide the training and testing data
+    df_train = data_phy %>% filter(bee_family != fam) %>% select(-bee_family)
+    df_test = data_phy %>% filter(bee_family == fam) %>% select(-bee_family)
+    
+    rf = randomForest(diet_breadth ~ .,data= df_train  %>% select(-scientificName),importance = T) #,na.action=na.omit,auc=T)
+    pred <- predict(rf, df_test %>% dplyr::select(-diet_breadth,-scientificName))
+    
+    df_test$prediction_correct <- df_test$diet_breadth==pred
+    
+    specialists_wrong = df_test[!df_test$prediction_correct & df_test$diet_breadth=='specialist',]$scientificName
+    generalists_wrong = df_test[!df_test$prediction_correct & df_test$diet_breadth=='generalist',]$scientificName
+    
+    #get auc values
+    #the test AUC
+    rf_p_test <- predict(rf, type="prob",newdata = df_test)[,2]
+    rf_pr_test <- prediction(rf_p_test, df_test$diet_breadth)
+    r_auc_test <- performance(rf_pr_test, measure = "auc")@y.values[[1]] 
+    r_auc_test    #0.956
+    
+    
+    ##auc of the training data
+    rf_p_train <- predict(rf, type="prob",newdata = df_train)[,2]
+    rf_pr_train <- prediction(rf_p_train, df_train$diet_breadth)
+    r_auc_train <- performance(rf_pr_train, measure = "auc")@y.values[[1]] 
+    r_auc_train    #0.956
+    
+    
+    list(rf,
+         tibble(
+           fam_left_out = fam,
+           overall_accuracy = mean(df_test$prediction_correct),
+           specialist_accuracy = mean(df_test[df_test$diet_breadth=="specialist",]$prediction_correct),
+           generalist_accuracy = mean(df_test[df_test$diet_breadth=="generalist",]$prediction_correct), 
+           test_auc = r_auc_test,
+           train_auc = r_auc_train,
+           specialists_wrong = list(specialists_wrong),
+           generalists_wrong = list(generalists_wrong)
+         ))
+    
+
+    
+    
+    
+  })
+phylo_blocked_output = phylo_blocked_output_ls %>% map_dfr(function(a_list) a_list[[2]])
+with(phylo_blocked_output %>% select(-fam_left_out,-specialists_wrong,-generalists_wrong) %>%
+       pivot_longer(everything(), names_to = 'performance_type',values_to = 'estimates'),
+     boxplot(estimates~performance_type))
+
+
+#let's look at variable importance
+var_importance_phy = 1:length(phylo_blocked_output_ls) %>% map_dfr(function(i){
+  
+  #select the model from the list
+  my_rf = phylo_blocked_output_ls[[i]][[1]]
+  
+  #get variable importance
+  new_df = data.frame(my_rf$importance) %>% 
+    mutate(predictor_var = rownames(.)) %>%
+    select(predictor_var, everything()) %>%
+    mutate(model_iteration = i)
+  
+  #get rid of rownames
+  rownames(new_df) <- NULL
+  
+  return(new_df)
+  
+  
+})
+
+#get average mean decrease in accuracy and see which variables have highest average
+# then plot variation
+top_predictors_phy = var_importance_phy %>% 
+  group_by(predictor_var) %>% 
+  summarize(mean_importance = mean(MeanDecreaseAccuracy)) %>%
+  arrange(desc(mean_importance))
+top10_phy = top_predictors_phy$predictor_var[1:10]
+top5_phy = top_predictors_phy$predictor_var[1:5]
+
+#plot boxplots of top predictors
+with(var_importance_phy %>% filter(predictor_var %in% top5_phy),
+     boxplot(MeanDecreaseAccuracy~predictor_var))
+
+
+########Next
+#block the data spatially
+#next let's spatially block the data into k-folds
+#first let's look at the data
+with(data,plot(med_long,med_lat))
+
+
+#let's divide into 4x2 grid 
+#divide the data in half by latitude
+med_lat_overall = median(globi_degree$med_lat)
+data_space = globi_degree %>% mutate(lat_block  = ifelse(med_lat>=med_lat_overall,1,2))
+
+
+#divide the data in fours by 25, 50 and 75 percentiles
+lon_seq = quantile(globi_degree$med_long, probs = c(.25,.5,.75))
+data_space$long_block <- 1
+data_space[data_space$med_long > lon_seq[1] & data_space$med_long<=lon_seq[2],]$long_block <- 2
+data_space[data_space$med_long > lon_seq[2] & data_space$med_long<=lon_seq[3],]$long_block <- 3
+data_space[data_space$med_long>=lon_seq[3],]$long_block <- 4
+
+#add spatial block as a variable
+data_space$spatial_block = as.numeric(as.factor(paste(data_space$lat_block,data_space$long_block)))
+
+#check and make sure the sample sizes are approximately even in each block
+data_space %>% group_by(spatial_block) %>% summarize(n=n())
+
+
+data_space2 = data_space %>%
+  select(-all_of(vars_to_remove)) %>%
+  select(-n_globi,-bee_family)
+
+block=1
+#plot to double check everything:
+with(data_space2,plot(med_long,med_lat,col=spatial_block))
+
+
+#now run the cross validation
+spatial_blocked_output_ls = unique(data_space2$spatial_block) %>%
+  purrr::map(function(block){
+    
+    #divide the training and testing data
+    df_train = data_space2 %>% filter(spatial_block != block) %>% select(-spatial_block,-med_lat, med_long)
+    df_test = data_space2 %>% filter(spatial_block == block)  %>% select(-spatial_block,-med_lat, med_long)
+    
+    rf = randomForest(diet_breadth ~ .,data= df_train %>% select(-scientificName),importance = T) #,na.action=na.omit,auc=T)
+    pred <- predict(rf, df_test %>% dplyr::select(-diet_breadth,-scientificName))
+    
+    df_test$prediction_correct <- df_test$diet_breadth==pred
+    
+    specialists_wrong = df_test[!df_test$prediction_correct & df_test$diet_breadth=='specialist',]$scientificName
+    generalists_wrong = df_test[!df_test$prediction_correct & df_test$diet_breadth=='generalist',]$scientificName
+    
+    
+    #get auc values
+    #the test AUC
+    rf_p_test <- predict(rf, type="prob",newdata = df_test)[,2]
+    rf_pr_test <- prediction(rf_p_test, df_test$diet_breadth)
+    r_auc_test <- performance(rf_pr_test, measure = "auc")@y.values[[1]] 
+    r_auc_test    #0.956
+    
+    
+    ##auc of the training data
+    rf_p_train <- predict(rf, type="prob",newdata = df_train)[,2]
+    rf_pr_train <- prediction(rf_p_train, df_train$diet_breadth)
+    r_auc_train <- performance(rf_pr_train, measure = "auc")@y.values[[1]] 
+    r_auc_train    #0.956
+    
+    
+    list(rf,
+    tibble(
+      block_left_out = block,
+      overall_accuracy = mean(df_test$prediction_correct),
+      specialist_accuracy = mean(df_test[df_test$diet_breadth=="specialist",]$prediction_correct),
+      generalist_accuracy = mean(df_test[df_test$diet_breadth=="generalist",]$prediction_correct), 
+      test_auc = r_auc_test,
+      train_auc = r_auc_train,
+      specialists_wrong = list(specialists_wrong),           
+      generalists_wrong = list(generalists_wrong)
+
+      
+    ))
+    
+    
+    
+  })
+spatial_blocked_output = spatial_blocked_output_ls %>% map_dfr(function(a_list) a_list[[2]])
+with(spatial_blocked_output %>% select(-block_left_out,-specialists_wrong,-generalists_wrong) %>%
+       pivot_longer(everything(), names_to = 'performance_type',values_to = 'estimates'),
+     boxplot(estimates~performance_type))
+
+
+#let's look at variable importance
+var_importance_space = 1:length(spatial_blocked_output_ls) %>% map_dfr(function(i){
+  
+  #select the model from the list
+  my_rf = spatial_blocked_output_ls[[i]][[1]]
+  
+  #get variable importance
+  new_df = data.frame(my_rf$importance) %>% 
+    mutate(predictor_var = rownames(.)) %>%
+    select(predictor_var, everything()) %>%
+    mutate(model_iteration = i)
+  
+  #get rid of rownames
+  rownames(new_df) <- NULL
+  
+  return(new_df)
+  
+  
+})
+
+#get average mean decrease in accuracy and see which variables have highest average
+# then plot variation
+top_predictors_space = var_importance_space %>% 
+  group_by(predictor_var) %>% 
+  summarize(mean_importance = mean(MeanDecreaseAccuracy)) %>%
+  arrange(desc(mean_importance))
+top10_space = top_predictors_space$predictor_var[1:10]
+top5_space = top_predictors_space$predictor_var[1:5]
+
+specialist_importance =var_importance_space %>% 
+  group_by(predictor_var) %>% 
+  summarize(mean_importance = mean(specialist)) %>%
+  arrange(desc(mean_importance))
+generalist_importance =var_importance_space %>% 
+  group_by(predictor_var) %>% 
+  summarize(mean_importance = mean(generalist)) %>%
+  arrange(desc(mean_importance))
+top5_specialists = specialist_importance$predictor_var[1:5]
+top5_generalists = generalist_importance$predictor_var[1:5]
+
+#plot boxplots of top predictors
+with(var_importance_space %>% filter(predictor_var %in% top5_space),
+     boxplot(MeanDecreaseAccuracy~predictor_var))
+with(var_importance_space %>% filter(predictor_var %in% top5_generalists),
+     boxplot(generalist~predictor_var))
+with(var_importance_space %>% filter(predictor_var %in% top5_specialists),
+     boxplot(specialist~predictor_var))
+
+
+##make partial dependence plots for the predictors
+
+
+#how does the spatial model perform without any phylognetic predcitors
+colnames(data_space2)
+data_space3 = data_space2 %>% select(scientificName,diet_breadth,phylo_simp,eigen1_plantGenus,
+                                     eigen2_plantGenus,eigen1_plantFam,eigen2_plantFam,
+                                     simpson_genus,med_lat,med_long,n_chesshire,area_ha,med_doy,flight_season,spatial_block)
+spatial_blocked_output_np = unique(data_space3$spatial_block) %>%
+  purrr::map_dfr(function(block){
+    
+    #divide the training and testing data
+    df_train = data_space3 %>% filter(spatial_block != block) %>% select(-spatial_block,-med_lat, med_long)
+    df_test = data_space3 %>% filter(spatial_block == block)  %>% select(-spatial_block,-med_lat, med_long)
+    
+    rf = randomForest(diet_breadth ~ .,data= df_train %>% select(-scientificName),importance = T) #,na.action=na.omit,auc=T)
+    pred <- predict(rf, df_test %>% dplyr::select(-diet_breadth,-scientificName))
+    
+    df_test$prediction_correct <- df_test$diet_breadth==pred
+    
+    specialists_wrong = df_test[!df_test$prediction_correct & df_test$diet_breadth=='specialist',]$scientificName
+    
+    
+    #get auc values
+    #the test AUC
+    rf_p_test <- predict(rf, type="prob",newdata = df_test)[,2]
+    rf_pr_test <- prediction(rf_p_test, df_test$diet_breadth)
+    r_auc_test <- performance(rf_pr_test, measure = "auc")@y.values[[1]] 
+    r_auc_test    #0.956
+    
+    
+    ##auc of the training data
+    rf_p_train <- predict(rf, type="prob",newdata = df_train)[,2]
+    rf_pr_train <- prediction(rf_p_train, df_train$diet_breadth)
+    r_auc_train <- performance(rf_pr_train, measure = "auc")@y.values[[1]] 
+    r_auc_train    #0.956
+    
+    
+    tibble(
+      block_left_out = block,
+      overall_accuracy = mean(df_test$prediction_correct),
+      specialist_accuracy = mean(df_test[df_test$diet_breadth=="specialist",]$prediction_correct),
+      generalist_accuracy = mean(df_test[df_test$diet_breadth=="generalist",]$prediction_correct), 
+      test_auc = r_auc_test,
+      train_auc = r_auc_train,
+      specialists_wrong = list(specialists_wrong)
+      
+    )
+    
+    
+    
+  })
+spatial_blocked_output_np
+with(spatial_blocked_output_np %>% select(-block_left_out,-specialists_wrong) %>%
+       pivot_longer(everything(), names_to = 'performance_type',values_to = 'estimates'),
+     boxplot(estimates~performance_type))
+
+
+
+
+##old
+##
+
+specialist_predictions = data_stratified %>%
+  filter(diet_breadth=='specialist' & scientificName %in% specialists_wrong_vec==F)  %>%
+  select(scientificName,diet_breadth) %>% mutate(model_prediction = 'specialist') %>%
+  bind_rows(data.frame(
+    scientificName = specialists_wrong_vec,
+    diet_breadth = 'specialist',
+    model_prediction = 'generalist'
+  )) %>%
+  arrange(model_prediction,scientificName)
+generalist_predictions = data_stratified %>%
+  filter(diet_breadth=='generalist' & scientificName %in% generalists_wrong_vec==F)  %>%
+  select(scientificName,diet_breadth) %>% mutate(model_prediction = 'generalist') %>%
+  bind_rows(data.frame(
+    scientificName = generalists_wrong_vec,
+    diet_breadth='generalist',
+    model_prediction = 'specialists'
+  )) %>%
+  arrange(model_prediction,scientificName)
+
+predictions = bind_rows(specialist_predictions,generalist_predictions) %>%
+  mutate(genus=sub(" .*","",scientificName)) 
+(ah_predictions= predictions%>%
+  filter(genus %in% c('Habropoda','Anthophora')))
+
+mean(specialist_predictions$model_prediction=='specialist')
+# write_xlsx(ah_predictions,"modeling_data/predictions-AnthophoraHabropoda.xlsx")
+andrena = specialist_predictions %>% mutate(genus = gsub(' .*',"",scientificName)) %>%
+  filter(genus=="Andrena")
+mean(andrena$model_prediction=='specialist')
+
+perdita = specialist_predictions %>% mutate(genus = gsub(' .*',"",scientificName)) %>%
+  filter(genus=="Perdita")
+mean(perdita$model_prediction=='specialist')
+
+mean(specialist_predictions$model_prediction=='specialist')
+
+# write_xlsx(specialist_predictions,
+#            "modeling_data/specialist_predictions.xlsx")
+
+stratified_output$specialists_wrong
+
+
+
+
+
+
+
+
+##old  
+  
 globi_degree$region = ifelse(globi_degree$med_long > dividing_long,'east','west')
 globi_degree %>%filter(scientificName =='Andrena erigeniae') %>% select(region)
 globi_degree %>%filter(scientificName =='Diadasia diminuta') %>% select(region)
 
 ##remove columns from the dataset we don't want to model
-degree_smaller = globi_degree %>% select(-c('spherical_geometry','n_globi','bee_genus','bee_family','mean_doy','diet_breadth_detailed',
+degree_smaller = globi_degree %>% select(-c('spherical_geometry','n_globi','med_long','bee_genus','bee_family','mean_doy','diet_breadth_detailed', 
                                             'rich_genus','simpson_genus','rich_fam','simpson_fam','area_m2',"quant10","quant90"))
 
 #divide the dataset into training data and testing data
@@ -82,8 +581,9 @@ n_distinct(western_bees)
 #
 rf_sp = randomForest(as.factor(diet_breadth) ~ .,data= training_globi %>% select(-c(scientificName,region)),importance = T,na.action=na.omit,auc=T)
 pred_east <- predict(rf_sp, testing_globi %>% dplyr::select(-c(scientificName,diet_breadth,region)))
+# pdf('figures/test_geo.pdf',width=12)
 varImpPlot(rf_sp)
-
+# dev.off()
 
 testing_globi$prediction <- pred_east
 testing_globi$prediction_correct <- testing_globi$diet_breadth==testing_globi$prediction
@@ -93,14 +593,21 @@ mean(testing_globi$prediction_correct)
 mean(testing_globi[testing_globi$diet_breadth=="specialist",]$prediction_correct)
 mean(testing_globi[testing_globi$diet_breadth=="generalist",]$prediction_correct)
 
+
+
 testing_globi %>% select(diet_breadth,prediction,prediction_correct) 
 
+#i'm curious what specialist bees are predicted to be generalists
+testing_globi %>% 
+  filter(diet_breadth=='specialist' & !prediction_correct) %>%
+  distinct(scientificName)
 
 #####################################
 ##let's also try dividing the data phylogenetically
 ##remove columns from the dataset we don't want to model
 degree_smaller2 = globi_degree %>% 
-  select(scientificName,diet_breadth,bee_family, phylo_simp, flight_season, phylo_rich, med_doy,n_chesshire, area_ha, med_long,med_lat) %>%
+  select(scientificName,diet_breadth,bee_family, phylo_simp, flight_season, 
+         phylo_rich, med_doy,n_chesshire, area_ha, med_long,med_lat,eigen1_plantGenus,eigen2_plantGenus,eigen1_plantFam, eigen2_plantFam) %>%
   filter(!is.na(med_doy))
 
 training_phy = degree_smaller2 %>% filter(bee_family %in% c("Andrenidae","Melittidae","Halictidae","Colletidae"))
@@ -110,7 +617,11 @@ nrow(testing_phy)
 
 rf_phy = randomForest(as.factor(diet_breadth) ~ .,data= training_phy %>% select(-c(scientificName,bee_family)),importance = T,na.action=na.omit,auc=T)
 pred_group2 <- predict(rf_phy,testing_phy %>% select(-c(scientificName,bee_family)))
+
+# pdf('figures/test_phylo.pdf',width=12)
 varImpPlot(rf_phy)
+# dev.off()
+
 
 ##assess prediction accuracy
 testing_phy$prediction <- pred_group2
@@ -124,7 +635,40 @@ mean(testing_phy$prediction_correct)
 mean(testing_phy[testing_phy$diet_breadth=="specialist",]$prediction_correct)
 mean(testing_phy[testing_phy$diet_breadth=="generalist",]$prediction_correct)
 
+#which specialist bees are predicted to be generalists?
+data.frame(testing_phy %>% 
+  filter(diet_breadth=='specialist' & !prediction_correct) %>%
+  distinct(scientificName))
 
+
+#####
+#divide the dataset into training data and testing data
+degree_smaller2 = globi_degree %>% select(-c('spherical_geometry','n_globi','bee_genus','bee_family','mean_doy','diet_breadth_detailed', 
+                                            'rich_genus','simpson_genus','rich_fam','simpson_fam','area_m2',"quant10","quant90"))
+
+
+half_size = floor(nrow(degree_smaller2)/2)
+
+training_ind = sample(1:nrow(degree_smaller2),half_size,1)
+
+training = degree_smaller2[training_ind,]
+testing = degree_smaller2[-training_ind,]
+
+
+#
+rf = randomForest(as.factor(diet_breadth) ~ .,data= training %>% select(-c(scientificName,region)),importance = T,na.action=na.omit,auc=T)
+pred <- predict(rf, testing %>% dplyr::select(-c(scientificName,diet_breadth,region)))
+# pdf('figures/test_geo.pdf',width=12)
+varImpPlot(rf)
+# dev.off()
+
+testing$prediction <- pred
+testing$prediction_correct <- testing$diet_breadth==testing$prediction
+
+#overall accuracy
+mean(testing$prediction_correct)
+mean(testing[testing$diet_breadth=="specialist",]$prediction_correct)
+mean(testing[testing$diet_breadth=="generalist",]$prediction_correct)
 
 
 #########################

@@ -12,6 +12,8 @@ library(gridExtra)
 library(pROC)
 library(pROC)
 library(ROCR)
+library(pdp) # for partial, plotPartial, and grid.arrange functions
+
 
 # load the globi data
 set.seed(111342)
@@ -344,12 +346,12 @@ with(data_space2,plot(med_long,med_lat,col=spatial_block))
 
 
 #now run the cross validation
-spatial_blocked_output_ls = unique(data_space2$spatial_block) %>%
+spatial_blocked_output_ls = 1:length(data_space2$spatial_block) %>%
   purrr::map(function(block){
     
     #divide the training and testing data
-    df_train = data_space2 %>% filter(spatial_block != block) %>% select(-spatial_block,-med_lat, med_long)
-    df_test = data_space2 %>% filter(spatial_block == block)  %>% select(-spatial_block,-med_lat, med_long)
+    df_train = data_space2 %>% filter(spatial_block != block) %>% select(-spatial_block,-med_lat, -med_long)
+    df_test = data_space2 %>% filter(spatial_block == block)  %>% select(-spatial_block,-med_lat, -med_long)
     
     rf = randomForest(diet_breadth ~ .,data= df_train %>% select(-scientificName),importance = T) #,na.action=na.omit,auc=T)
     pred <- predict(rf, df_test %>% dplyr::select(-diet_breadth,-scientificName))
@@ -448,6 +450,218 @@ with(var_importance_space %>% filter(predictor_var %in% top5_specialists),
 
 
 ##make partial dependence plots for the predictors
+i=1
+partial_ls = 1:length(spatial_blocked_output_ls) %>% purrr::map(function(i){
+  my_rf = spatial_blocked_output_ls[[i]][[1]]
+  df_train = data_space2 %>% filter(spatial_block != i) %>% select(-spatial_block,-med_lat, -med_long,-scientificName)
+  
+  partial_data1 = partial(my_rf, pred.var = c("phylo_simp"),which.class = 'specialist',prob=T,data=df_train)  %>%
+    rename(prob_specialist_phylo = yhat)
+  partial_data2 = partial(my_rf, pred.var = c("simpson_genus"),which.class = 'specialist',prob=T) %>%
+    rename(prob_specialist_simp = yhat)
+  partial_data3 = partial(my_rf, pred.var = c("Perdita"),which.class = 'specialist',prob=T) %>%
+    rename(prob_specialist_perdita = yhat)
+  
+  output_data = partial_data1 %>% bind_cols(partial_data2) %>% bind_cols(partial_data3) %>%
+    mutate(model_iteration=i)
+  return(output_data)
+  })
+partial_df = partial_ls %>% bind_rows
+
+
+#format data to make histograms
+break_n=40
+phylo_simp_min=min(data_space2$phylo_simp); phylo_simp_max=max(data_space2$phylo_simp)
+my_breaks=seq(phylo_simp_min,phylo_simp_max,by=(phylo_simp_max-phylo_simp_min)/break_n) 
+data_space2$category_binary =ifelse(data_space2$diet_breadth=='specialist',1,0)
+
+densities_df=data_space2 %>% split(.$category_binary) %>% map_dfr(function(df){
+  dens=hist(df$phylo_simp,plot=F,breaks=my_breaks)
+  percent_dens=  dens$density/sum(dens$density)
+  
+  
+  data.frame(phylo_simp=dens$mid,percent_dens=percent_dens) %>% 
+    mutate(category_binary=df$category_binary[1])
+  
+}) 
+
+hist_df=densities_df %>% mutate(pct=ifelse(category_binary,1-percent_dens,percent_dens))
+
+
+
+
+my_cols = RColorBrewer::brewer.pal(length(partial_ls),'Paired')
+my_cols2 = RColorBrewer::brewer.pal(8,'Set2')[4:8]
+
+# tiff('figures/var_importance.tiff', units="in", width=6, height=6, res=500, compression = 'lzw')
+(phylo_simp_graph = ggplot() +
+  geom_segment(data=hist_df[hist_df$category_binary==0,], size=4, show.legend=FALSE,colour=my_cols2[1],
+               aes(x=phylo_simp, xend=phylo_simp, y=category_binary, yend=pct)) +
+  geom_segment(data=hist_df[hist_df$category_binary==1,], size=4, show.legend=FALSE,colour=my_cols2[2],
+               aes(x=phylo_simp, xend=phylo_simp, y=category_binary, yend=pct))+
+  geom_segment(dat=data_space2[data_space2$category_binary==0,], aes(x=phylo_simp, xend=phylo_simp, y=0, yend=-0.02), size=0.2, colour="grey30") +
+  geom_segment(dat=data_space2[data_space2$category_binary==1,], aes(x=phylo_simp, xend=phylo_simp, y=1, yend=1.02), size=0.2, colour="grey30") +
+  geom_line(data=partial_ls[[1]],aes(x=phylo_simp,y=prob_specialist_phylo),color=my_cols[partial_ls[[1]]$model_iteration[1]],lwd=1) +
+  geom_line(data=partial_ls[[2]],aes(x=phylo_simp,y=prob_specialist_phylo),color=my_cols[partial_ls[[2]]$model_iteration[1]],lwd=1) +
+  geom_line(data=partial_ls[[3]],aes(x=phylo_simp,y=prob_specialist_phylo),color=my_cols[partial_ls[[3]]$model_iteration[1]],lwd=1) +
+  geom_line(data=partial_ls[[4]],aes(x=phylo_simp,y=prob_specialist_phylo),color=my_cols[partial_ls[[4]]$model_iteration[1]],lwd=1) +
+  geom_line(data=partial_ls[[5]],aes(x=phylo_simp,y=prob_specialist_phylo),color=my_cols[partial_ls[[5]]$model_iteration[1]],lwd=1) +
+  geom_line(data=partial_ls[[6]],aes(x=phylo_simp,y=prob_specialist_phylo),color=my_cols[partial_ls[[6]]$model_iteration[1]],lwd=1) +
+  geom_line(data=partial_ls[[7]],aes(x=phylo_simp,y=prob_specialist_phylo),color=my_cols[partial_ls[[7]]$model_iteration[1]],lwd=1) +
+  geom_line(data=partial_ls[[8]],aes(x=phylo_simp,y=prob_specialist_phylo),color=my_cols[partial_ls[[8]]$model_iteration[1]],lwd=1) +
+  theme_bw(base_size=12)+theme(
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    text = element_text(size=20)
+  )+
+  labs(x='Phylogenetic diversity of \nplants visited',y='Probability of being a \nspecialist bee'))
+
+
+
+
+#format data to make histograms
+break_n=40
+simp_min=min(data_space2$simpson_genus); simp_max=max(data_space2$simpson_genus)
+my_breaks_simp=seq(simp_min,simp_max,by=(simp_max-simp_min)/break_n) 
+
+densities_df_simp=data_space2 %>% split(.$category_binary) %>% map_dfr(function(df){
+  dens=hist(df$simpson_genus,plot=F,breaks=my_breaks_simp)
+  percent_dens=  dens$density/sum(dens$density)
+  
+  
+  data.frame(simpson_genus=dens$mid,percent_dens=percent_dens) %>% 
+    mutate(category_binary=df$category_binary[1])
+  
+}) 
+
+hist_df_simp=densities_df_simp %>% mutate(pct=ifelse(category_binary,1-percent_dens,percent_dens))
+
+
+(simpson_genus_graph = ggplot() +
+  geom_segment(data=hist_df_simp[hist_df_simp$category_binary==1,], size=4, show.legend=FALSE,colour=my_cols2[1],
+               aes(x=simpson_genus, xend=simpson_genus, y=category_binary, yend=pct)) +
+  geom_segment(data=hist_df_simp[hist_df_simp$category_binary==0,], size=4, show.legend=FALSE,colour=my_cols2[2],
+               aes(x=simpson_genus, xend=simpson_genus, y=category_binary, yend=pct))+
+  geom_segment(dat=data_space2[data_space2$category_binary==0,], aes(x=simpson_genus, xend=simpson_genus, y=0, yend=-0.02), size=0.2, colour="grey30") +
+  geom_segment(dat=data_space2[data_space2$category_binary==1,], aes(x=simpson_genus, xend=simpson_genus, y=1, yend=1.02), size=0.2, colour="grey30") +
+  geom_line(data=partial_ls[[1]],aes(x=simpson_genus,y=prob_specialist_simp),color=my_cols[partial_ls[[1]]$model_iteration[1]],lwd=1) +
+  geom_line(data=partial_ls[[2]],aes(x=simpson_genus,y=prob_specialist_simp),color=my_cols[partial_ls[[2]]$model_iteration[1]],lwd=1) +
+  geom_line(data=partial_ls[[3]],aes(x=simpson_genus,y=prob_specialist_simp),color=my_cols[partial_ls[[3]]$model_iteration[1]],lwd=1) +
+  geom_line(data=partial_ls[[4]],aes(x=simpson_genus,y=prob_specialist_simp),color=my_cols[partial_ls[[4]]$model_iteration[1]],lwd=1) +
+  geom_line(data=partial_ls[[5]],aes(x=simpson_genus,y=prob_specialist_simp),color=my_cols[partial_ls[[5]]$model_iteration[1]],lwd=1) +
+  geom_line(data=partial_ls[[6]],aes(x=simpson_genus,y=prob_specialist_simp),color=my_cols[partial_ls[[6]]$model_iteration[1]],lwd=1) +
+  geom_line(data=partial_ls[[7]],aes(x=simpson_genus,y=prob_specialist_simp),color=my_cols[partial_ls[[7]]$model_iteration[1]],lwd=1) +
+  geom_line(data=partial_ls[[8]],aes(x=simpson_genus,y=prob_specialist_simp),color=my_cols[partial_ls[[8]]$model_iteration[1]],lwd=1) +
+  theme_bw(base_size=12)+theme(
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    text = element_text(size=20)
+  )+
+  labs(x='Simpson diversity of plants \nvisited',y='Probability of being a \nspecialist bee'))
+
+
+#dev.of()
+
+
+##finally make graph for 3rd most important variable - perdita
+break_n=40
+perd_min=min(data_space2$Perdita); perd_max=max(data_space2$Perdita)
+my_breaks_perd=seq(perd_min,perd_max,by=(perd_max-perd_min)/break_n) 
+
+densities_df_perd=data_space2 %>% split(.$category_binary) %>% map_dfr(function(df){
+  dens=hist(df$Perdita,plot=F,breaks=my_breaks_perd)
+  percent_dens=  dens$density/sum(dens$density)
+  
+  
+  data.frame(Perdita=dens$mid,percent_dens=percent_dens) %>% 
+    mutate(category_binary=df$category_binary[1])
+  
+}) 
+
+hist_df_perd=densities_df_perd %>% mutate(pct=ifelse(category_binary,1-percent_dens,percent_dens))
+
+
+
+(perdita_graph = ggplot() +
+    geom_segment(data=hist_df_perd[hist_df_perd$category_binary==1,], size=4, show.legend=FALSE,colour=my_cols2[1],
+                 aes(x=Perdita, xend=Perdita, y=category_binary, yend=pct)) +
+    geom_segment(data=hist_df_perd[hist_df_perd$category_binary==0,], size=4, show.legend=FALSE,colour=my_cols2[2],
+                 aes(x=Perdita, xend=Perdita, y=category_binary, yend=pct))+
+    geom_segment(dat=data_space2[data_space2$category_binary==0,], aes(x=Perdita, xend=Perdita, y=0, yend=-0.02), size=0.2, colour="grey30") +
+    geom_segment(dat=data_space2[data_space2$category_binary==1,], aes(x=Perdita, xend=Perdita, y=1, yend=1.02), size=0.2, colour="grey30") +
+    geom_line(data=partial_ls[[1]],aes(x=Perdita,y=prob_specialist_perdita),color=my_cols[partial_ls[[1]]$model_iteration[1]],lwd=1) +
+    geom_line(data=partial_ls[[2]],aes(x=Perdita,y=prob_specialist_perdita),color=my_cols[partial_ls[[2]]$model_iteration[1]],lwd=1) +
+    geom_line(data=partial_ls[[3]],aes(x=Perdita,y=prob_specialist_perdita),color=my_cols[partial_ls[[3]]$model_iteration[1]],lwd=1) +
+    geom_line(data=partial_ls[[4]],aes(x=Perdita,y=prob_specialist_perdita),color=my_cols[partial_ls[[4]]$model_iteration[1]],lwd=1) +
+    geom_line(data=partial_ls[[5]],aes(x=Perdita,y=prob_specialist_perdita),color=my_cols[partial_ls[[5]]$model_iteration[1]],lwd=1) +
+    geom_line(data=partial_ls[[6]],aes(x=Perdita,y=prob_specialist_perdita),color=my_cols[partial_ls[[6]]$model_iteration[1]],lwd=1) +
+    geom_line(data=partial_ls[[7]],aes(x=Perdita,y=prob_specialist_perdita),color=my_cols[partial_ls[[7]]$model_iteration[1]],lwd=1) +
+    geom_line(data=partial_ls[[8]],aes(x=Perdita,y=prob_specialist_perdita),color=my_cols[partial_ls[[8]]$model_iteration[1]],lwd=1) +
+    theme_bw(base_size=12)+theme(
+      # Hide panel borders and remove grid lines
+      panel.border = element_blank(),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      # Change axis line
+      axis.line = element_line(colour = "black"),
+      text = element_text(size=20)
+    )+
+    labs(x='Phylogenetic distance to the \nbee genus Perdita',y='Probability of being a \nspecialist bee'))
+
+
+#dev.of()
+
+# tiff('figures/important_vars.tiff', units="in", width=7, height=14, res=1000, compression = 'lzw')
+pdf('figures/important_vars.pdf', width=7, height=14)
+grid.arrange(phylo_simp_graph, simpson_genus_graph, perdita_graph)
+dev.off()
+
+par(mfrow=c(1,3),cex.lab=2)
+for(i in 1:length(partial_ls)){
+  df=partial_ls[[i]]
+  if(i==1)   with(df,plot(phylo_simp,prob_specialist_phylo, type='l',col=my_cols[i],ylim=c(0,1),
+                          xlab = 'Phylogenetic simpson diversity of plants visited',
+                          ylab='Probability of being a specialist'))
+  if(i != 1) with(df,lines(phylo_simp,prob_specialist_phylo, type='l',col=my_cols[i]))
+  
+  #add data points
+  
+}
+diet_breadth_numeric = ifelse(data_space2$diet_breadth=='specialist',1,0)
+
+with(data_space2,points(phylo_simp,diet_breadth_numeric))
+
+for(i in 1:length(partial_ls)){
+  df=partial_ls[[i]]
+  if(i==1)   {with(df,plot(simpson_genus,prob_specialist_simp, type='l',col=my_cols[i],ylim=c(0,1),
+                          xlab = 'Simpson diversity of plant genera visited',
+                          ylab='Probability of being a specialist'))}
+  if(i != 1) with(df,lines(simpson_genus,prob_specialist_simp, type='l',col=my_cols[i]))
+
+  
+}
+
+for(i in 1:length(partial_ls)){
+  df=partial_ls[[i]]
+  if(i==1)   {with(df,plot(Perdita,prob_specialist_perdita, type='l',col=my_cols[i],ylim=c(0,1),
+                           xlab = 'Phylogenetic distance to the bee genus Perdita',
+                           ylab='Probability of being a specialist'))}
+  if(i != 1) with(df,lines(Perdita,prob_specialist_perdita, type='l',col=my_cols[i]))
+
+  
+}
+
+
+partialPlot(my_rf, pred.data = df_train, x.var = "phylo_simp")
+partial_data = partial(my_rf, pred.var = "phylo_simp")  %>% mutate(model_iteration=i)
 
 
 #how does the spatial model perform without any phylognetic predcitors

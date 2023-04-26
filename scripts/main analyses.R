@@ -48,10 +48,21 @@ globi_u=globi %>% left_join(diet_breadth %>% distinct(scientificName,diet_breadt
 #double check no increase in the number of rows
 nrow(globi) ==nrow(globi_u)
 
-#how many records total in our data
-paste0('our data has ', nrow(globi_u),' records total, with ', n_distinct(globi_u$scientificName),' bee species, and ',
-       n_distinct(globi_u$plant_genus), ' plant genera')
+#how many records total in our data?
+#we excluded 8 species that lacked any date info. Get rid of these bee species wahen calculating n_plants
+#globi_degree already has these species excluded
+globi_u_final =globi_u %>%
+  filter(scientificName %in% globi_degree$scientificName)
+nrow(globi_u_final)
+paste0('our data has ', sum(globi_degree$n_globi),' records total, with ', nrow(globi_degree),' bee species, and ',
+       n_distinct(globi_u_final$plant_genus), ' plant genera')
+#how many records of specialists
+spec_globi = globi_degree %>% filter(diet_breadth == 'specialist')
+gen_globi = globi_degree %>% filter(diet_breadth == 'generalist')
 
+#44,419 were records of pollen specialist bees, from 459 species, and 162,073 were records of generalist bees from 833 species.
+paste0(sum(spec_globi$n_globi),' were records of pollen specialist bees, from ', nrow(spec_globi), ' species')
+paste0(sum(gen_globi$n_globi),' were records of pollen generalist bees, from ', nrow(gen_globi), ' species')
 
 #get # of records of pollen specialists and generalists
 sum(globi_degree$n_globi); n_distinct(globi_u$scientificName); nrow(globi_degree)
@@ -64,6 +75,13 @@ with(globi_degree %>% filter(diet_breadth=="generalist"),
 with(globi_degree,boxplot(phylo_simp~diet_breadth))
 with(globi_degree,boxplot(phylo_rich~diet_breadth))
 
+#make table of specialist and generalist bees for the supplement
+head(globi_degree)
+
+# species_list = globi_degree %>% select(scientificName, bee_family, diet_breadth) %>%
+#   arrange(bee_family, scientificName) %>%
+#   rename('Bee species' = scientificName, Family = bee_family, "Diet breadth" = diet_breadth)
+# # write_xlsx(species_list,'modeling_data/species_list.xlsx')
 
 #let's look at correlations btw predictor variables:
 #subset data to just be predictor variables - that don't include the phylo distance between plant genera
@@ -116,7 +134,8 @@ data_stratified %>%
 head(data)
 data %>% mutate(genus = sub(" .*","",scientificName)) %>%
   summarize(n_distinct(genus))
-
+nrow(data)
+nrow(data_stratified)
 
 # save one fold for testing and train the model on the rest of the data
 # get distribution of accuracy, importance values etc
@@ -297,7 +316,7 @@ var_importance_phy = 1:length(phylo_blocked_output_ls) %>% map_dfr(function(i){
 
 #get average mean decrease in accuracy and see which variables have highest average
 # then plot variation
-top_predictors_phy = var_importance_phy %>% 
+top_predictors_phy =  var_importance_phy %>% 
   group_by(predictor_var) %>% 
   summarize(mean_importance = mean(MeanDecreaseAccuracy)) %>%
   arrange(desc(mean_importance))
@@ -338,20 +357,19 @@ data_space %>% group_by(spatial_block) %>% summarize(n=n())
 
 data_space2 = data_space %>%
   select(-all_of(vars_to_remove)) %>%
-  select(-n_globi,-bee_family)
+  select(-n_globi,-bee_family,-lat_block,-long_block)
 
 block=1
 #plot to double check everything:
 with(data_space2,plot(med_long,med_lat,col=spatial_block))
 
-
 #now run the cross validation
-spatial_blocked_output_ls = 1:length(data_space2$spatial_block) %>%
+spatial_blocked_output_ls = 1:n_distinct(data_space2$spatial_block) %>%
   purrr::map(function(block){
     
     #divide the training and testing data
-    df_train = data_space2 %>% filter(spatial_block != block) %>% select(-spatial_block,-med_lat, -med_long)
-    df_test = data_space2 %>% filter(spatial_block == block)  %>% select(-spatial_block,-med_lat, -med_long)
+    df_train = data_space2 %>% filter(spatial_block != block) %>% select(-spatial_block,-med_lat,-med_long)
+    df_test = data_space2 %>% filter(spatial_block == block)  %>% select(-spatial_block,-med_lat,-med_long)
     
     rf = randomForest(diet_breadth ~ .,data= df_train %>% select(-scientificName),importance = T) #,na.action=na.omit,auc=T)
     pred <- predict(rf, df_test %>% dplyr::select(-diet_breadth,-scientificName))
@@ -367,15 +385,8 @@ spatial_blocked_output_ls = 1:length(data_space2$spatial_block) %>%
     rf_p_test <- predict(rf, type="prob",newdata = df_test)[,2]
     rf_pr_test <- prediction(rf_p_test, df_test$diet_breadth)
     r_auc_test <- performance(rf_pr_test, measure = "auc")@y.values[[1]] 
-    r_auc_test    #0.956
     
-    
-    ##auc of the training data
-    rf_p_train <- predict(rf, type="prob",newdata = df_train)[,2]
-    rf_pr_train <- prediction(rf_p_train, df_train$diet_breadth)
-    r_auc_train <- performance(rf_pr_train, measure = "auc")@y.values[[1]] 
-    r_auc_train    #0.956
-    
+
     
     list(rf,
     tibble(
@@ -384,7 +395,6 @@ spatial_blocked_output_ls = 1:length(data_space2$spatial_block) %>%
       specialist_accuracy = mean(df_test[df_test$diet_breadth=="specialist",]$prediction_correct),
       generalist_accuracy = mean(df_test[df_test$diet_breadth=="generalist",]$prediction_correct), 
       test_auc = r_auc_test,
-      train_auc = r_auc_train,
       specialists_wrong = list(specialists_wrong),           
       generalists_wrong = list(generalists_wrong)
 
@@ -429,6 +439,7 @@ top_predictors_space = var_importance_space %>%
 top10_space = top_predictors_space$predictor_var[1:10]
 top5_space = top_predictors_space$predictor_var[1:5]
 
+
 specialist_importance =var_importance_space %>% 
   group_by(predictor_var) %>% 
   summarize(mean_importance = mean(specialist)) %>%
@@ -449,24 +460,157 @@ with(var_importance_space %>% filter(predictor_var %in% top5_specialists),
      boxplot(specialist~predictor_var))
 
 
+#aggregate all accuracy & auc values from the models
+
+stratified_sum = stratified_output %>% 
+  select(-fold_left_out,-specialists_wrong,-generalists_wrong) %>%
+  mutate(blocking_method = 'random')
+phylo_sum = phylo_blocked_output %>% 
+  select(-fam_left_out,-specialists_wrong,-generalists_wrong) %>%
+  mutate(blocking_method = 'phylogenetic')
+spatial_sum = spatial_blocked_output %>% 
+  select(-block_left_out,-specialists_wrong,-generalists_wrong) %>%
+  mutate(blocking_method = 'spatial')
+
+accuracy_sum = stratified_sum %>% bind_rows(phylo_sum) %>% bind_rows(spatial_sum)
+
+accuracy_sum %>%
+  dplyr::select(blocking_method, everything()) %>%
+  select(-train_auc) %>%
+  pivot_longer(cols = !blocking_method,names_to = "performance_measure", values_to = 'estimate') %>%
+  group_by(blocking_method, performance_measure) %>%
+  summarize(mean = mean(estimate), min = min(estimate), max = max(estimate))
+
+
+accuracy_long = accuracy_sum %>%
+  dplyr::select(blocking_method, everything()) %>%
+  rename(AUC = test_auc) %>%
+  select(-train_auc) %>%
+  pivot_longer(cols = !blocking_method,names_to = "performance_measure", values_to = 'estimate')
+
+#make boxplots of accuracy by blocking method for different performance measures
+# pdf('figures/accuracy_estimates.pdf')
+par(mfrow=c(2,2), mar = c(4.2,4.2,5,1), cex.lab = 1.5)
+for(i in 1:n_distinct(accuracy_long$performance_measure)){
+  pm = unique(accuracy_long$performance_measure)[i]
+  focal_df = accuracy_long %>%  filter(performance_measure ==pm) 
+  pm2 = sub("_"," ",pm)
+  title = paste0(toupper(substr(pm2,1,1)), substr(pm2,2,nchar(pm2)))
+  my_ylab = 'Accuracy'
+  if(pm=="AUC") {title = "AUC"; my_ylab = 'AUC'}
+  the_col = adjustcolor('plum4',0.6)
+  blocking_cols = adjustcolor(RColorBrewer::brewer.pal(4,'Set3')[c(2,3,4)],.5)
+  
+  #next add the boxplot
+  with(focal_df,boxplot(estimate~blocking_method, 
+                        col=blocking_cols,xlab = "Blocking method", 
+                        ylab = my_ylab, main = title, cex.main=1.8))
+  with(focal_df, stripchart(estimate~blocking_method,          # Data
+                            method = "jitter", # Random noise
+                            pch = 19,   
+                            cex = 1.3,
+                            col = the_col,           # Color of the symbol
+                            vertical = TRUE,   # Vertical mode
+                            add=T))        
+  
+}
+# dev.off()
+
+
+#next let's aggregate all importance values together from all model runs
+#and rank them from most to least important
+var_importance_all = var_importance %>% bind_rows(var_importance_phy) %>% bind_rows(var_importance_space)
+vars_ranked = var_importance_all %>%
+  group_by(predictor_var) %>% 
+  summarize(mean_importance = mean(MeanDecreaseAccuracy)) %>%
+  arrange(desc(mean_importance))
+top10_all = vars_ranked[1:10,]$predictor_var
+with(var_importance_all %>% filter(predictor_var %in% top10_all),boxplot(MeanDecreaseAccuracy~predictor_var))
+
+rename = data.frame(predictor_var = top10_all,
+                    predictor_factor = c("Phylogenetic \ndiversity", "Simpson \ndiversity",
+                                         "Mesoxaea", 'Flight season \nduration', 'Plant identity \n(2nd eigenvalue)', 
+                                         "Macrotera",'Regional \nabundance', "Perdita", "Pseudopanurgus", "Calliopsis")) %>%
+  mutate(predictor_factor = factor(predictor_factor, levels = predictor_factor[10:1]))
+
+rename2 = data.frame(predictor_var = top10_all,
+                    predictor_factor = c("Phylogenetic diversity", "Simpson diversity",
+                                         "Mesoxaea", 'Flight season duration', 'Plant identity (2nd eigenvalue)', 
+                                         "Macrotera",'Regional abundance', "Perdita", "Pseudopanurgus", "Calliopsis")) %>%
+  mutate(predictor_factor = factor(predictor_factor, levels = predictor_factor[10:1]))
+
+
+vars_ranked$predictor_var[!vars_ranked$predictor_var %in% rename$predictor_var]
+rename_add = data.frame(predictor_var = c('med_doy',"med_lat","med_long","area_ha","eigen1_plantFam", "eigen2_plantFam","eigen1_plantGenus"),
+                       predictor_factor = c('Median day of activity', 'Median latitude','Median longitude', "Extent of Occurrence", 'Plant family identity (1st eivenvalue)', 'Plant family identity (2nd eigenvalue)','Plant identity (1st eigenvalue)'))
+
+#make table with importance values for the supplement
+all_var_table = vars_ranked %>% left_join(rename2 %>% bind_rows(rename_add)) %>%
+  mutate(predictor_factor = ifelse(is.na(predictor_factor),predictor_var,predictor_factor)) %>%
+  dplyr::select(predictor_factor, mean_importance) %>%
+  rename("Predictor variable" = predictor_factor, "Mean importance" = mean_importance)
+write_xlsx(all_var_table,'modeling_data/Importance_predictors.xlsx')
+
+#format figure for the paper
+var_top10 = rename %>% 
+  left_join(var_importance_all)
+
+my_col = adjustcolor('skyblue4',.6)
+
+#first add the data points
+# tiff('figures/var_importance2.tiff', units="in", width=14, height=174, res=1000, compression = 'lzw')
+pdf('figures/testfig.pdf',width = 14.1)
+par(cex.lab =1.7, mgp=c(3, 1.5, 0), mar =c(5.5,5.5,5,1))
+with(var_top10, stripchart(MeanDecreaseAccuracy~predictor_factor,          # Data
+                           method = "jitter", # Random noise
+                           pch = 19,   
+                           cex = 1.5,
+                           col = my_col,           # Color of the symbol
+                           vertical = TRUE,   # Vertical mode
+                           xlab = "", 
+                           ylab = "Importance (mean decrase in model accuracy)"))        
+mtext("Predictor Variable", side=1, line=4, cex=1.7)
+#next add the boxplot
+with(var_top10,boxplot(MeanDecreaseAccuracy~predictor_factor,
+                       col=adjustcolor('white',0),add=T))
+dev.off()
+
 ##make partial dependence plots for the predictors
 i=1
 partial_ls = 1:length(spatial_blocked_output_ls) %>% purrr::map(function(i){
   my_rf = spatial_blocked_output_ls[[i]][[1]]
-  df_train = data_space2 %>% filter(spatial_block != i) %>% select(-spatial_block,-med_lat, -med_long,-scientificName)
-  
+
   partial_data1 = partial(my_rf, pred.var = c("phylo_simp"),which.class = 'specialist',prob=T,data=df_train)  %>%
     rename(prob_specialist_phylo = yhat)
   partial_data2 = partial(my_rf, pred.var = c("simpson_genus"),which.class = 'specialist',prob=T) %>%
     rename(prob_specialist_simp = yhat)
-  partial_data3 = partial(my_rf, pred.var = c("Perdita"),which.class = 'specialist',prob=T) %>%
-    rename(prob_specialist_perdita = yhat)
+  partial_data3 = partial(my_rf, pred.var = c("Mesoxaea"),which.class = 'specialist',prob=T) %>%
+    rename(prob_specialist_meso = yhat)
   
   output_data = partial_data1 %>% bind_cols(partial_data2) %>% bind_cols(partial_data3) %>%
     mutate(model_iteration=i)
   return(output_data)
   })
 partial_df = partial_ls %>% bind_rows
+
+##calculate average effect size for phylo_simp and simpson_genus
+head(partial_df)
+#prob for species visiting max phylo diversity of plants
+(max_phylo_pred = partial_df[which.max(partial_df$phylo_simp),]$prob_specialist_phylo)
+#prob for species visiting min phylo diversity of plants
+(min_phylo_pred = partial_df[which.min(partial_df$phylo_simp),]$prob_specialist_phylo)
+
+#percent increase
+(min_phylo_pred-max_phylo_pred)/max_phylo_pred
+
+##
+#prob for species visiting max simpson diversity of plants
+(max_simp_pred = partial_df[which.max(partial_df$simpson_genus),]$prob_specialist_simp)
+#prob for species visiting min simpson diversity of plants
+(min_simp_pred = partial_df[which.min(partial_df$simpson_genus),]$prob_specialist_simp)
+
+#percent increase
+(min_simp_pred-max_simp_pred)/max_simp_pred
 
 
 #format data to make histograms
@@ -571,40 +715,40 @@ hist_df_simp=densities_df_simp %>% mutate(pct=ifelse(category_binary,1-percent_d
 #dev.of()
 
 
-##finally make graph for 3rd most important variable - perdita
+##finally make graph for 3rd most important variable - mesoxaea
 break_n=40
-perd_min=min(data_space2$Perdita); perd_max=max(data_space2$Perdita)
-my_breaks_perd=seq(perd_min,perd_max,by=(perd_max-perd_min)/break_n) 
+meso_min=min(data_space2$Mesoxaea); meso_max=max(data_space2$Mesoxaea)
+my_breaks_perd=seq(meso_min,meso_max,by=(meso_max-meso_min)/break_n) 
 
-densities_df_perd=data_space2 %>% split(.$category_binary) %>% map_dfr(function(df){
-  dens=hist(df$Perdita,plot=F,breaks=my_breaks_perd)
+densities_df_meso=data_space2 %>% split(.$category_binary) %>% map_dfr(function(df){
+  dens=hist(df$Mesoxaea,plot=F,breaks=my_breaks_perd)
   percent_dens=  dens$density/sum(dens$density)
   
   
-  data.frame(Perdita=dens$mid,percent_dens=percent_dens) %>% 
+  data.frame(Mesoxaea=dens$mid,percent_dens=percent_dens) %>% 
     mutate(category_binary=df$category_binary[1])
   
 }) 
 
-hist_df_perd=densities_df_perd %>% mutate(pct=ifelse(category_binary,1-percent_dens,percent_dens))
+hist_df_meso=densities_df_meso %>% mutate(pct=ifelse(category_binary,1-percent_dens,percent_dens))
 
 
 
-(perdita_graph = ggplot() +
-    geom_segment(data=hist_df_perd[hist_df_perd$category_binary==1,], size=4, show.legend=FALSE,colour=my_cols2[1],
-                 aes(x=Perdita, xend=Perdita, y=category_binary, yend=pct)) +
-    geom_segment(data=hist_df_perd[hist_df_perd$category_binary==0,], size=4, show.legend=FALSE,colour=my_cols2[2],
-                 aes(x=Perdita, xend=Perdita, y=category_binary, yend=pct))+
-    geom_segment(dat=data_space2[data_space2$category_binary==0,], aes(x=Perdita, xend=Perdita, y=0, yend=-0.02), size=0.2, colour="grey30") +
-    geom_segment(dat=data_space2[data_space2$category_binary==1,], aes(x=Perdita, xend=Perdita, y=1, yend=1.02), size=0.2, colour="grey30") +
-    geom_line(data=partial_ls[[1]],aes(x=Perdita,y=prob_specialist_perdita),color=my_cols[partial_ls[[1]]$model_iteration[1]],lwd=1) +
-    geom_line(data=partial_ls[[2]],aes(x=Perdita,y=prob_specialist_perdita),color=my_cols[partial_ls[[2]]$model_iteration[1]],lwd=1) +
-    geom_line(data=partial_ls[[3]],aes(x=Perdita,y=prob_specialist_perdita),color=my_cols[partial_ls[[3]]$model_iteration[1]],lwd=1) +
-    geom_line(data=partial_ls[[4]],aes(x=Perdita,y=prob_specialist_perdita),color=my_cols[partial_ls[[4]]$model_iteration[1]],lwd=1) +
-    geom_line(data=partial_ls[[5]],aes(x=Perdita,y=prob_specialist_perdita),color=my_cols[partial_ls[[5]]$model_iteration[1]],lwd=1) +
-    geom_line(data=partial_ls[[6]],aes(x=Perdita,y=prob_specialist_perdita),color=my_cols[partial_ls[[6]]$model_iteration[1]],lwd=1) +
-    geom_line(data=partial_ls[[7]],aes(x=Perdita,y=prob_specialist_perdita),color=my_cols[partial_ls[[7]]$model_iteration[1]],lwd=1) +
-    geom_line(data=partial_ls[[8]],aes(x=Perdita,y=prob_specialist_perdita),color=my_cols[partial_ls[[8]]$model_iteration[1]],lwd=1) +
+(meso_graph = ggplot() +
+    geom_segment(data=hist_df_meso[hist_df_meso$category_binary==1,], size=4, show.legend=FALSE,colour=my_cols2[1],
+                 aes(x=Mesoxaea, xend=Mesoxaea, y=category_binary, yend=pct)) +
+    geom_segment(data=hist_df_meso[hist_df_meso$category_binary==0,], size=4, show.legend=FALSE,colour=my_cols2[2],
+                 aes(x=Mesoxaea, xend=Mesoxaea, y=category_binary, yend=pct))+
+    geom_segment(dat=data_space2[data_space2$category_binary==0,], aes(x=Mesoxaea, xend=Mesoxaea, y=0, yend=-0.02), size=0.2, colour="grey30") +
+    geom_segment(dat=data_space2[data_space2$category_binary==1,], aes(x=Mesoxaea, xend=Mesoxaea, y=1, yend=1.02), size=0.2, colour="grey30") +
+    geom_line(data=partial_ls[[1]],aes(x=Mesoxaea,y=prob_specialist_meso),color=my_cols[partial_ls[[1]]$model_iteration[1]],lwd=1) +
+    geom_line(data=partial_ls[[2]],aes(x=Mesoxaea,y=prob_specialist_meso),color=my_cols[partial_ls[[2]]$model_iteration[1]],lwd=1) +
+    geom_line(data=partial_ls[[3]],aes(x=Mesoxaea,y=prob_specialist_meso),color=my_cols[partial_ls[[3]]$model_iteration[1]],lwd=1) +
+    geom_line(data=partial_ls[[4]],aes(x=Mesoxaea,y=prob_specialist_meso),color=my_cols[partial_ls[[4]]$model_iteration[1]],lwd=1) +
+    geom_line(data=partial_ls[[5]],aes(x=Mesoxaea,y=prob_specialist_meso),color=my_cols[partial_ls[[5]]$model_iteration[1]],lwd=1) +
+    geom_line(data=partial_ls[[6]],aes(x=Mesoxaea,y=prob_specialist_meso),color=my_cols[partial_ls[[6]]$model_iteration[1]],lwd=1) +
+    geom_line(data=partial_ls[[7]],aes(x=Mesoxaea,y=prob_specialist_meso),color=my_cols[partial_ls[[7]]$model_iteration[1]],lwd=1) +
+    geom_line(data=partial_ls[[8]],aes(x=Mesoxaea,y=prob_specialist_meso),color=my_cols[partial_ls[[8]]$model_iteration[1]],lwd=1) +
     theme_bw(base_size=12)+theme(
       # Hide panel borders and remove grid lines
       panel.border = element_blank(),
@@ -614,50 +758,16 @@ hist_df_perd=densities_df_perd %>% mutate(pct=ifelse(category_binary,1-percent_d
       axis.line = element_line(colour = "black"),
       text = element_text(size=20)
     )+
-    labs(x='Phylogenetic distance to the \nbee genus Perdita',y='Probability of being a \nspecialist bee'))
+    labs(x='Phylogenetic distance to the \nbee genus Mesoxaea',y='Probability of being a \nspecialist bee'))
 
 
 #dev.of()
 
 # tiff('figures/important_vars.tiff', units="in", width=7, height=14, res=1000, compression = 'lzw')
-pdf('figures/important_vars.pdf', width=7, height=14)
-grid.arrange(phylo_simp_graph, simpson_genus_graph, perdita_graph)
-dev.off()
+# pdf('figures/important_vars.pdf', width=7, height=14)
+grid.arrange(phylo_simp_graph, simpson_genus_graph, meso_graph)
+# dev.off()
 
-par(mfrow=c(1,3),cex.lab=2)
-for(i in 1:length(partial_ls)){
-  df=partial_ls[[i]]
-  if(i==1)   with(df,plot(phylo_simp,prob_specialist_phylo, type='l',col=my_cols[i],ylim=c(0,1),
-                          xlab = 'Phylogenetic simpson diversity of plants visited',
-                          ylab='Probability of being a specialist'))
-  if(i != 1) with(df,lines(phylo_simp,prob_specialist_phylo, type='l',col=my_cols[i]))
-  
-  #add data points
-  
-}
-diet_breadth_numeric = ifelse(data_space2$diet_breadth=='specialist',1,0)
-
-with(data_space2,points(phylo_simp,diet_breadth_numeric))
-
-for(i in 1:length(partial_ls)){
-  df=partial_ls[[i]]
-  if(i==1)   {with(df,plot(simpson_genus,prob_specialist_simp, type='l',col=my_cols[i],ylim=c(0,1),
-                          xlab = 'Simpson diversity of plant genera visited',
-                          ylab='Probability of being a specialist'))}
-  if(i != 1) with(df,lines(simpson_genus,prob_specialist_simp, type='l',col=my_cols[i]))
-
-  
-}
-
-for(i in 1:length(partial_ls)){
-  df=partial_ls[[i]]
-  if(i==1)   {with(df,plot(Perdita,prob_specialist_perdita, type='l',col=my_cols[i],ylim=c(0,1),
-                           xlab = 'Phylogenetic distance to the bee genus Perdita',
-                           ylab='Probability of being a specialist'))}
-  if(i != 1) with(df,lines(Perdita,prob_specialist_perdita, type='l',col=my_cols[i]))
-
-  
-}
 
 
 partialPlot(my_rf, pred.data = df_train, x.var = "phylo_simp")
@@ -718,8 +828,19 @@ with(spatial_blocked_output_np %>% select(-block_left_out,-specialists_wrong) %>
        pivot_longer(everything(), names_to = 'performance_type',values_to = 'estimates'),
      boxplot(estimates~performance_type))
 
+#calculate changes in accuracy with and without phylo predictors
+spatil_np_long = spatial_blocked_output_np %>% select(-block_left_out,-specialists_wrong) %>%
+  pivot_longer(everything(), names_to = 'performance_type',values_to = 'estimates') %>%
+  mutate(phylo_predictors = 'no')
+spatial_long = spatial_blocked_output %>% select(-block_left_out,-specialists_wrong,-generalists_wrong) %>%
+  pivot_longer(everything(), names_to = 'performance_type',values_to = 'estimates') %>%
+  mutate(phylo_predictors = 'yes')
 
-
+spatil_np_long %>% 
+  bind_rows(spatial_long) %>%
+  group_by(performance_type, phylo_predictors) %>%
+  summarize(mean=mean(estimates)) %>%
+  pivot_wider(names_from = phylo_predictors, values_from = mean)
 
 ##old
 ##
@@ -1428,7 +1549,6 @@ n_recs[n_recs != 1]
 
 # Andrena rehni - specialist on chesnut; doesn't have enough records with this species to show up in the data
 ## how to deal with species that have 0% visits to host plant (based on the threshold we're using)
-globi_genus_specs %>% filter()
 
 # nectar_fidelity = plants_nectar %>% 
 #   rename(plant_genus = host) %>%

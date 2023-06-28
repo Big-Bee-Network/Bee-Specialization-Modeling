@@ -139,7 +139,8 @@ wfo_accepted = wfo_filtered %>%
   mutate(old_name = scientificName, accepted_name=scientificName,source = 'wfo') %>%
   rename(accepted_family = family) %>%
   distinct(old_name,accepted_name,accepted_family,taxonomicStatus,source) %>%
-  mutate(accepted_family = ifelse(is.na(accepted_family),accepted_name,accepted_family))
+  mutate(accepted_family = ifelse(is.na(accepted_family),accepted_name,accepted_family)) %>%
+  mutate(accepted_family = ifelse(accepted_family=='Compositae',"Asteraceae",accepted_family))
 
 #any duplicated names within the accepted species? 
 wfo_accepted$accepted_name[duplicated(wfo_accepted$accepted_name)]
@@ -183,12 +184,14 @@ not_in_wfo_reformatted = not_in_wfo %>%
   rename(old_name = fowler, accepted_name=accepted,accepted_family=family) %>%
   mutate(accepted_genus = sub(" .*","",accepted_name),
          taxonomicStatus = ifelse(old_name != accepted_name,"SYNONYM",'ACCEPTED')) 
-wfo_name_update = wfo_accepted %>% bind_rows(wfo_syn_update)  %>% bind_rows(not_in_wfo_reformatted) %>%
+wfo_name_update = wfo_accepted %>% bind_rows(wfo_syn_update)  %>% 
+  bind_rows(not_in_wfo_reformatted) %>%
   rename(old_plant = old_name)
 
 #double check all plants are in the df and that there are no duplicates
 wfo_name_update[duplicated(wfo_name_update$old_plant),]
 update_these_names[!update_these_names %in% wfo_name_update$old_plant]
+
 
 
 fowler_formatted = hosts_long %>% rename(old_plant = new_host) %>%
@@ -201,7 +204,8 @@ nrow(fowler_formatted) == nrow(hosts_long)
 
 #double check that with the name update, no genera in different families
 dupes_f = fowler_formatted$scientificName[duplicated(fowler_formatted$scientificName)]
-View(fowler_formatted %>% filter(scientificName %in% dupes_f))
+#View(fowler_formatted %>% filter(scientificName %in% dupes_f))
+
 #looks like there are none... this vector should be empty:
 which(fowler_formatted %>%
   split(.$scientificName) %>% purrr::map_lgl(function(df) n_distinct(df$host_family)!=1))
@@ -217,7 +221,7 @@ folwer_updated = fowler_names_toAlign %>%
   mutate(finalName = ifelse(is.na(finalName),providedName,finalName)) %>% #for bees not in chesshire et al, just use the provided name
   dplyr::select(-geo_informed)
 
-#now update teh fowler dataframes
+#now update the fowler dataframes
 fowler_formatted2=fowler_formatted %>% 
   rename(old_bee_name = scientificName) %>%
   left_join(folwer_updated %>% rename(old_bee_name = providedName,scientificName = finalName))
@@ -226,55 +230,10 @@ diet_breadth2 = diet_breadth %>%
   left_join(folwer_updated %>% rename(old_bee_name = providedName,scientificName = finalName))
 
 
-# write_csv(fowler_formatted2,'modeling_data/fowler_formatted-7march2023.csv')
-# write_csv(diet_breadth2,'modeling_data/bee_diet_breadth-7march2023.csv')
+write_csv(fowler_formatted2,'modeling_data/fowler_formatted-28june2023.csv')
+write_csv(diet_breadth2,'modeling_data/bee_diet_breadth-28june2023.csv')
 
 
 
 
 
-
-
-##old 
-#do this using name alignment template
-#save file for name alignment on github
-fowler_names_toAlign = data.frame(scientificName = unique(fowler_formatted$scientificName))
-# write_csv(fowler_names_toAlign,'modeling_data/fowler_toAlign.csv')
-
-#upload the output of the name alignment
-fowler_aligned = vroom("modeling_data/fowler_names-aligned.csv")%>%
-  mutate(source = ifelse(grepl("ITIS",alignedExternalId),'itis',NA)) %>% #add column with source
-  mutate(source = ifelse(grepl("discover",alignedExternalId),'discoverlife',source)) %>%#add column with source
-  mutate(source = ifelse(grepl("NCBI",alignedExternalId),'ncbi',source)) #add column with source
-
-#update names - use DL first, followed by itis, followed by col
-#first filter just be discover life bees
-dl_bees = fowler_aligned %>% filter(source=='discoverlife') %>% distinct(providedName,alignedName)
-#add itis bees that are not in the discover life list
-itis_bees = fowler_aligned %>% filter(source=='itis' & !providedName %in% dl_bees$providedName)%>% distinct(providedName,alignedName)
-#add col bees that are not in the discover life list or the itis list
-ncbi_bees = fowler_aligned %>% filter(source=='ncbi' & !providedName %in% c(dl_bees$providedName,itis_bees$providedName))%>% distinct(providedName,alignedName)
-
-name_update = rbind(dl_bees,itis_bees,ncbi_bees)
-
-#check no duplicates
-name_update[duplicated(name_update$providedName),]
-
-#any bees missing?
-(missing = fowler_names_toAlign %>% filter(!scientificName %in% name_update$providedName)) #these are spelling mistakes
-add_me = data.frame(providedName = missing$scientificName,alignedName = c('Andrena osmioides','Melissodes robustior'))
-
-name_update2 = name_update %>% bind_rows(add_me) 
-
-#now update teh fowler dataframes
-fowler_formatted2=fowler_formatted %>% 
-  rename(old_bee_name = scientificName) %>%
-  left_join(name_update2 %>% rename(old_bee_name = providedName,scientificName = alignedName))
-diet_breadth2 = diet_breadth %>% 
-  rename(old_bee_name = scientificName) %>%
-  left_join(name_update2 %>% rename(old_bee_name = providedName,scientificName = alignedName))
-  
-
-# write_csv(fowler_formatted2,'modeling_data/fowler_formatted.csv')
-# write_csv(diet_breadth2,'modeling_data/bee_diet_breadth.csv')
-# 

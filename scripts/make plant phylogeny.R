@@ -16,7 +16,8 @@ library(V.PhyloMaker)
 globi_full = vroom('modeling_data/globi_american_native_bees_7march2023.csv')
 
 #standardize according to the plant list, because that's what v.phylomaker uses
-plant_df = globi_full %>% distinct(plant_species,plant_genus,plant_family) %>% 
+plant_df = globi_full %>% 
+  distinct(plant_species,plant_genus,plant_family) %>% 
   rename(genus=plant_genus,family=plant_family)
 test_me = plant_df$plant_species
 
@@ -105,6 +106,12 @@ globi_tpl = globi %>%
 (sp_in_megatree=plant_update %>% filter(sub(" ","_",plant_species) %in% tips.info$species))
 (gen_in_megatree= plant_update %>% filter(plant_genus %in% tips.info$genus))
 
+
+#how many genera totally missing from the megatree
+nrow(plant_update %>% filter(!plant_genus %in% tips.info$genus) %>% distinct(plant_genus))
+nrow(gen_in_megatree %>% distinct(plant_genus))
+nrow(plant_update %>% distinct(plant_genus))
+
 #for genera with our region's species in the megatree, 
 #randomly pick among the species that are in the megatree
 set.seed(1013)
@@ -115,14 +122,14 @@ sp_list_small1=sp_in_megatree %>% group_by(plant_genus,plant_family) %>%
 #that are on the megatree?
 sp_out_megatree=plant_update %>% 
   filter(!sub(" ","_",plant_species) %in% tips.info$species)
+
 gen_out_megatree=sp_out_megatree %>% filter(!plant_genus %in% sp_list_small1$plant_genus)
-n_distinct(gen_out_megatree$plant_genus)#how many genera are not on the megatree?
-n_distinct(gen_in_megatree$plant_genus)#how many of the genera are in the megatree?
 
 #for genera not in the megatree just randomly pick a species from each
 set.seed(9980)
 sp_list_small2=gen_out_megatree %>% group_by(plant_genus,plant_family)%>% 
   summarize(plant_species=sample(plant_species,1))
+
 
 #bind the two dataframes together
 sp_list_small=data.frame(bind_rows(sp_list_small1,sp_list_small2) %>%
@@ -134,15 +141,15 @@ sp_list_small %>%
   filter(!plant_genus %in% plant_update$plant_genus) #should be empty tibble
 
 # #UNCOMMENT ME TO make the phylogeny
-# angio_tree =  phylo.maker(sp_list_small,scenarios = 'S3') # make the phylogeny out of the species list
-# saveRDS(angio_tree,'modeling_data/phylogney_plant_genera-8march2023.rds')
+angio_tree =  phylo.maker(sp_list_small,scenarios = 'S2') # make the phylogeny out of the species list
+# saveRDS(angio_tree,'modeling_data/phylogney_plant_genera-21march2023.rds')
 
 
-angio_tree = readRDS('modeling_data/phylogney_plant_genera-8march2023.rds')
-scenario3 = angio_tree$scenario.3
+angio_tree = readRDS('modeling_data/phylogney_plant_genera-21march2023.rds')
+scenario2 = angio_tree$scenario.2$run.1
 
 #change the tip.labels to be plant genera
-scenario3$tip.label <- sub("_.*","",scenario3$tip.label)
+scenario2$tip.label <- sub("_.*","",scenario2$tip.label)
 
 
 #now we need to calculate phylogenetic diversity of plants visited for each 
@@ -171,8 +178,8 @@ globi_matrix[1:10,1:5]
 
 
 #calculate phylo simpson diversity
-phylo_simp = hill_phylo(globi_matrix, scenario3, q = 2)
-phylo_rich = hill_phylo(globi_matrix, scenario3, q = 0)
+phylo_simp = hill_phylo(globi_matrix, scenario2, q = 2)
+phylo_rich = hill_phylo(globi_matrix, scenario2, q = 0)
 
 ###also get plant community composition
 horn_dist = vegdist(globi_matrix, method = 'horn')
@@ -262,7 +269,7 @@ nrow(div_df) == nrow(plant_id)
 
 with(div_df,plot(phylo_simp,simpson_genus))
 with(div_df,plot(phylo_simp,simpson_fam))
-with(div_df,plot(phylo_simp,phylo_rich)) #not good
+with(div_df,plot(phylo_simp,phylo_rich)) 
 with(div_df,plot(phylo_simp,n))
 with(div_df,plot(phylo_rich,rich_genus))
 with(div_df,plot(phylo_rich,rich_fam))

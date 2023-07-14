@@ -15,7 +15,7 @@ library(ROCR)
 library(pdp) # for partial, plotPartial, and grid.arrange functions
 
 
-# load the globi data
+# set the seed
 set.seed(111342)
 
 ##analysis
@@ -37,8 +37,8 @@ globi_degree =read_csv("modeling_data/globi_speciesLevelFinal.csv")%>% #let's re
 
 
 #also load the fowler data
-fowler_formatted = read_csv('modeling_data/fowler_formatted-7march2023.csv')
-diet_breadth = read_csv('modeling_data/bee_diet_breadth-7march2023.csv')
+fowler_formatted = read_csv('modeling_data/fowler_formatted-28june2023.csv')
+diet_breadth = read_csv('modeling_data/bee_diet_breadth-28june2023.csv')
 
 
 specialists = diet_breadth[diet_breadth$diet_breadth=='specialist',]$scientificName
@@ -49,7 +49,7 @@ globi_u=globi %>% left_join(diet_breadth %>% distinct(scientificName,diet_breadt
 nrow(globi) ==nrow(globi_u)
 
 #how many records total in our data?
-#we excluded 8 species that lacked any date info. Get rid of these bee species wahen calculating n_plants
+#we excluded 8 species that lacked any date info. Get rid of these bee species when calculating n_plants
 #globi_degree already has these species excluded
 globi_u_final =globi_u %>%
   filter(scientificName %in% globi_degree$scientificName)

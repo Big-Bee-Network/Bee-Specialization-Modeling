@@ -399,7 +399,8 @@ spatial_blocked_output_ls = 1:n_distinct(data_space2$spatial_block) %>%
       generalists_wrong = list(generalists_wrong)
 
       
-    ))
+    ),
+    df_train)
     
     
     
@@ -549,7 +550,7 @@ all_var_table = vars_ranked %>% left_join(rename2 %>% bind_rows(rename_add)) %>%
   mutate(predictor_factor = ifelse(is.na(predictor_factor),predictor_var,predictor_factor)) %>%
   dplyr::select(predictor_factor, mean_importance) %>%
   rename("Predictor variable" = predictor_factor, "Mean importance" = mean_importance)
-write_xlsx(all_var_table,'modeling_data/Importance_predictors.xlsx')
+# write_xlsx(all_var_table,'modeling_data/Importance_predictors.xlsx')
 
 #format figure for the paper
 var_top10 = rename %>% 
@@ -559,7 +560,7 @@ my_col = adjustcolor('skyblue4',.6)
 
 #first add the data points
 # tiff('figures/var_importance2.tiff', units="in", width=14, height=174, res=1000, compression = 'lzw')
-pdf('figures/testfig.pdf',width = 14.1)
+# pdf('figures/testfig.pdf',width = 14.1)
 par(cex.lab =1.7, mgp=c(3, 1.5, 0), mar =c(5.5,5.5,5,1))
 with(var_top10, stripchart(MeanDecreaseAccuracy~predictor_factor,          # Data
                            method = "jitter", # Random noise
@@ -573,18 +574,19 @@ mtext("Predictor Variable", side=1, line=4, cex=1.7)
 #next add the boxplot
 with(var_top10,boxplot(MeanDecreaseAccuracy~predictor_factor,
                        col=adjustcolor('white',0),add=T))
-dev.off()
+# dev.off()
 
 ##make partial dependence plots for the predictors
 i=1
 partial_ls = 1:length(spatial_blocked_output_ls) %>% purrr::map(function(i){
   my_rf = spatial_blocked_output_ls[[i]][[1]]
+  df_train = spatial_blocked_output_ls[[i]][[3]]
 
-  partial_data1 = partial(my_rf, pred.var = c("phylo_simp"),which.class = 'specialist',prob=T,data=df_train)  %>%
+  partial_data1 = partial(my_rf, pred.var = c("phylo_simp"),which.class = 'specialist',prob=T,train=df_train)  %>%
     rename(prob_specialist_phylo = yhat)
-  partial_data2 = partial(my_rf, pred.var = c("simpson_genus"),which.class = 'specialist',prob=T) %>%
+  partial_data2 = partial(my_rf, pred.var = c("simpson_genus"),which.class = 'specialist',prob=T,train=df_train) %>%
     rename(prob_specialist_simp = yhat)
-  partial_data3 = partial(my_rf, pred.var = c("Mesoxaea"),which.class = 'specialist',prob=T) %>%
+  partial_data3 = partial(my_rf, pred.var = c("Mesoxaea"),which.class = 'specialist',prob=T,train=df_train) %>%
     rename(prob_specialist_meso = yhat)
   
   output_data = partial_data1 %>% bind_cols(partial_data2) %>% bind_cols(partial_data3) %>%
@@ -841,6 +843,88 @@ spatil_np_long %>%
   group_by(performance_type, phylo_predictors) %>%
   summarize(mean=mean(estimates)) %>%
   pivot_wider(names_from = phylo_predictors, values_from = mean)
+
+
+##let's see how our random forest models compare to something simpler
+
+i=1
+majority_class_predictions = unique(data_space$spatial_block) %>% map_dfr(function(testing_block){
+  #get globi sample size and add to data_space2
+  df_train = data_space  %>% filter(spatial_block !=testing_block) %>% mutate(bee_genus = sub(" .*","",scientificName))
+  df_test = data_space%>% filter(spatial_block ==testing_block) %>% mutate(bee_genus = sub(" .*","",scientificName))
+  
+  #get prop specialists in each genus and family, using the training data
+  genera_majority = df_train %>% 
+    group_by(bee_genus) %>% 
+    summarize(prop_specialists = mean(diet_breadth=='specialist')) %>%
+    mutate(majority_class = ifelse(prop_specialists>0.5,'specialist','generalist'))
+  family_majority = df_train %>%
+    group_by(bee_family)%>% 
+    summarize(prop_specialists = mean(diet_breadth=='specialist')) %>%
+    mutate(majority_class = ifelse(prop_specialists>0.5,'specialist','generalist'))
+  
+  
+  #predict bee species will be majority class in its genus, using the testing data
+  genus_prediction = df_test %>% dplyr::select(scientificName, bee_genus, bee_family) %>% left_join(genera_majority)  %>%
+    select(scientificName, majority_class, bee_family) %>% rename(prediction = majority_class)
+  
+  #if the genus is not in the training data use the majority class of the family
+  family_prediction = genus_prediction %>% filter(is.na(prediction))  %>% left_join(family_majority) %>%
+    select(scientificName, majority_class, bee_family) %>% rename(prediction = majority_class)
+  
+  all_prediction = genus_prediction %>% filter(!is.na(prediction)) %>%
+    bind_rows(family_prediction) %>% select(-bee_family)
+  #check if predictions are correct
+  check_predictions = df_test %>% select(scientificName,diet_breadth) %>% left_join(all_prediction) %>%
+    mutate(correct = diet_breadth==prediction)
+  
+  data.frame(
+    testing_block = testing_block,
+    overall_accuracy = mean(check_predictions$correct),
+    specialist_accuracy = with(check_predictions %>% filter(diet_breadth=='specialist'),mean(correct)),
+    generalist_accuracy = with(check_predictions %>% filter(diet_breadth=='generalist'),mean(correct))
+    
+  )
+})
+apply(majority_class_predictions, 2, mean)
+
+
+
+
+#old
+
+#for rarer bees (fewer than twenty records in globi)
+# assign the species to the majority class in the genus
+#or if the genus is not in the training data assign to the majority class of the family
+rarer = df_test %>% filter(n_globi<10004)
+rarer_prediction1 = rarer %>% dplyr::select(scientificName, bee_genus, bee_family) %>% left_join(genera_majority)  %>%
+  select(scientificName, majority_class, bee_family) %>% rename(prediction = majority_class)
+
+#if the genus is not in the training data use the majority class of the family
+rarer_prediction_noGenus = rarer_prediction1 %>% filter(is.na(prediction))  %>% left_join(family_majority) %>%
+  select(scientificName, majority_class, bee_family) %>% rename(prediction = majority_class)
+
+rarer_prediction = rarer_prediction1 %>% filter(!is.na(prediction)) %>%
+  bind_rows(rarer_prediction_noGenus) %>% select(-bee_family)
+
+#for common species, loop through each row of df_train
+common_train = df_train %>% filter(!scientificName %in% rarer$scientificName)
+common_test = df_test %>% filter(!scientificName %in% rarer$scientificName)
+#what is the 25 percentile of phylo simpson?
+percentile25 = quantile(common_train$phylo_simp,.25)
+common_predictions = common_test %>% select(scientificName, phylo_simp) %>% 
+  mutate(prediction = ifelse(phylo_simp<percentile25,'specialist','generalist')) %>% select(-phylo_simp)
+
+predictions = rarer_prediction %>% bind_rows(common_predictions)
+
+#check if predictions are correct
+check_predictions = df_test %>% select(scientificName,diet_breadth) %>% left_join(predictions) %>%
+  mutate(correct = diet_breadth==prediction)
+check_predictions %>% filter(is.na(correct))
+(overall_accuracy = mean(check_predictions$correct))
+with(check_predictions %>% filter(diet_breadth=='specialist'),mean(correct))
+with(check_predictions %>% filter(diet_breadth=='generalist'),mean(correct))
+
 
 ##old
 ##

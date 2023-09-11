@@ -137,6 +137,9 @@ data %>% mutate(genus = sub(" .*","",scientificName)) %>%
 nrow(data)
 nrow(data_stratified)
 
+
+#
+
 # save one fold for testing and train the model on the rest of the data
 # get distribution of accuracy, importance values etc
 i=1
@@ -144,7 +147,16 @@ i=1
 i=3
 
 
+#let's see if I can get probability from randmo forest models
+##divide the training and testing data
+df_train = data_stratified %>% filter(fold != i) %>% select(-fold,-n_globi)
+df_test = data_stratified %>% filter(fold == i) %>% select(-fold,-n_globi)
 
+rf = randomForest(diet_breadth ~ .,data= df_train %>% select(-scientificName),importance = T) #,na.action=na.omit,auc=T)
+
+rf$votes
+
+#stratfied random blocking method
 stratified_output_ls = 1:k_folds %>%
   purrr::map(function(i){
     
@@ -197,6 +209,7 @@ with(stratified_output %>% select(-fold_left_out,-specialists_wrong,-generalists
 specialists_wrong_vec = unlist(stratified_output$specialists_wrong)
 generalists_wrong_vec = unlist(stratified_output$generalists_wrong)
 
+mean(stratified_output$overall_accuracy)
 #let's look at variable importance
 var_importance = 1:length(stratified_output_ls) %>% map_dfr(function(i){
   
@@ -400,7 +413,8 @@ spatial_blocked_output_ls = 1:n_distinct(data_space2$spatial_block) %>%
 
       
     ),
-    df_train)
+    df_train,
+    df_test)
     
     
     
@@ -409,8 +423,28 @@ spatial_blocked_output = spatial_blocked_output_ls %>% map_dfr(function(a_list) 
 with(spatial_blocked_output %>% select(-block_left_out,-specialists_wrong,-generalists_wrong) %>%
        pivot_longer(everything(), names_to = 'performance_type',values_to = 'estimates'),
      boxplot(estimates~performance_type))
+mean(spatial_blocked_output$overall_accuracy)
 
+#get probability of specialists and generalists
+the_probs = 1:n_distinct(data_space2$spatial_block) %>%
+  purrr::map_dfr(function(i){
+    my_rf = spatial_blocked_output_ls[[i]][[1]]
+    my_sp = spatial_blocked_output_ls[[i]][[3]] %>% select(scientificName, diet_breadth)
+    prop_df = my_sp %>% bind_cols(data.frame(my_rf$votes)) %>% mutate(iteration = i)
+    
+    
+  })
 
+mean_probs = the_probs %>% group_by(scientificName, diet_breadth) %>% summarize(prob_generalist = mean(generalist), prob_specialist=mean(specialist))
+
+generalist_probs = mean_probs %>% filter(diet_breadth=='generalist') %>%
+  select(scientificName, diet_breadth, prob_generalist) %>% arrange(prob_generalist)
+specialist_probs = mean_probs %>% filter(diet_breadth=='specialist') %>%
+  select(scientificName, diet_breadth, prob_generalist) %>% arrange(prob_generalist)
+
+# write_csv(specialist_probs, "figures/specialist_probabilities.csv")
+# write_csv(generalist_probs, "figures/generalist_probabilities.csv")
+# 
 #let's look at variable importance
 var_importance_space = 1:length(spatial_blocked_output_ls) %>% map_dfr(function(i){
   
@@ -772,8 +806,8 @@ grid.arrange(phylo_simp_graph, simpson_genus_graph, meso_graph)
 
 
 
-partialPlot(my_rf, pred.data = df_train, x.var = "phylo_simp")
-partial_data = partial(my_rf, pred.var = "phylo_simp")  %>% mutate(model_iteration=i)
+# partialPlot(my_rf, pred.data = df_train, x.var = "phylo_simp")
+# partial_data = partial(my_rf, pred.var = "phylo_simp")  %>% mutate(model_iteration=i)
 
 
 #how does the spatial model perform without any phylognetic predcitors
@@ -846,9 +880,19 @@ spatil_np_long %>%
 
 
 ##let's see how our random forest models compare to something simpler
+(all_data_props = data_space%>% 
+  mutate(bee_genus = sub(" .*","",scientificName)) %>%
+  group_by(bee_genus) %>% 
+  summarize(prop_specialists = mean(diet_breadth=='specialist')))
+
+all_data_props %>% arrange(prop_specialists)
+all_data_props %>% arrange(desc(prop_specialists))
+mean(all_data_props$prop_specialists==1)
+mean(all_data_props$prop_specialists==0)
 
 i=1
-majority_class_predictions = unique(data_space$spatial_block) %>% map_dfr(function(testing_block){
+majority_class_predictions = unique(data_space$spatial_block) %>% 
+  map_dfr(function(testing_block){
   #get globi sample size and add to data_space2
   df_train = data_space  %>% filter(spatial_block !=testing_block) %>% mutate(bee_genus = sub(" .*","",scientificName))
   df_test = data_space%>% filter(spatial_block ==testing_block) %>% mutate(bee_genus = sub(" .*","",scientificName))
@@ -887,47 +931,54 @@ majority_class_predictions = unique(data_space$spatial_block) %>% map_dfr(functi
   )
 })
 apply(majority_class_predictions, 2, mean)
+mean(majority_class_predictions$overall_accuracy)
 
 
 
 
-#old
-
-#for rarer bees (fewer than twenty records in globi)
-# assign the species to the majority class in the genus
-#or if the genus is not in the training data assign to the majority class of the family
-rarer = df_test %>% filter(n_globi<10004)
-rarer_prediction1 = rarer %>% dplyr::select(scientificName, bee_genus, bee_family) %>% left_join(genera_majority)  %>%
-  select(scientificName, majority_class, bee_family) %>% rename(prediction = majority_class)
-
-#if the genus is not in the training data use the majority class of the family
-rarer_prediction_noGenus = rarer_prediction1 %>% filter(is.na(prediction))  %>% left_join(family_majority) %>%
-  select(scientificName, majority_class, bee_family) %>% rename(prediction = majority_class)
-
-rarer_prediction = rarer_prediction1 %>% filter(!is.na(prediction)) %>%
-  bind_rows(rarer_prediction_noGenus) %>% select(-bee_family)
-
-#for common species, loop through each row of df_train
-common_train = df_train %>% filter(!scientificName %in% rarer$scientificName)
-common_test = df_test %>% filter(!scientificName %in% rarer$scientificName)
-#what is the 25 percentile of phylo simpson?
-percentile25 = quantile(common_train$phylo_simp,.25)
-common_predictions = common_test %>% select(scientificName, phylo_simp) %>% 
-  mutate(prediction = ifelse(phylo_simp<percentile25,'specialist','generalist')) %>% select(-phylo_simp)
-
-predictions = rarer_prediction %>% bind_rows(common_predictions)
-
-#check if predictions are correct
-check_predictions = df_test %>% select(scientificName,diet_breadth) %>% left_join(predictions) %>%
-  mutate(correct = diet_breadth==prediction)
-check_predictions %>% filter(is.na(correct))
-(overall_accuracy = mean(check_predictions$correct))
-with(check_predictions %>% filter(diet_breadth=='specialist'),mean(correct))
-with(check_predictions %>% filter(diet_breadth=='generalist'),mean(correct))
-
-
-##old
-##
+# #old
+# 
+# #for rarer bees (fewer than twenty records in globi)
+# # assign the species to the majority class in the genus
+# #or if the genus is not in the training data assign to the majority class of the family
+# testing_block = unique(data_space$spatial_block)[1]
+# df_train = data_space  %>% filter(spatial_block !=testing_block) %>% mutate(bee_genus = sub(" .*","",scientificName))
+# df_test = data_space%>% filter(spatial_block ==testing_block) %>% mutate(bee_genus = sub(" .*","",scientificName))
+# 
+# rarer = df_test %>% filter(n_globi<10004)
+# rarer_prediction1 = rarer %>% 
+#   dplyr::select(scientificName, bee_genus, bee_family) %>% 
+#   left_join(genera_majority)  %>%
+#   select(scientificName, majority_class, bee_family) %>% rename(prediction = majority_class)
+# 
+# #if the genus is not in the training data use the majority class of the family
+# rarer_prediction_noGenus = rarer_prediction1 %>% filter(is.na(prediction))  %>% left_join(family_majority) %>%
+#   select(scientificName, majority_class, bee_family) %>% rename(prediction = majority_class)
+# 
+# rarer_prediction = rarer_prediction1 %>% filter(!is.na(prediction)) %>%
+#   bind_rows(rarer_prediction_noGenus) %>% select(-bee_family)
+# 
+# #for common species, loop through each row of df_train
+# common_train = df_train %>% filter(!scientificName %in% rarer$scientificName)
+# common_test = df_test %>% filter(!scientificName %in% rarer$scientificName)
+# #what is the 25 percentile of phylo simpson?
+# percentile25 = quantile(common_train$phylo_simp,.25)
+# common_predictions = common_test %>% select(scientificName, phylo_simp) %>% 
+#   mutate(prediction = ifelse(phylo_simp<percentile25,'specialist','generalist')) %>% select(-phylo_simp)
+# 
+# predictions = rarer_prediction %>% bind_rows(common_predictions)
+# 
+# #check if predictions are correct
+# check_predictions = df_test %>% select(scientificName,diet_breadth) %>% left_join(predictions) %>%
+#   mutate(correct = diet_breadth==prediction)
+# check_predictions %>% filter(is.na(correct))
+# (overall_accuracy = mean(check_predictions$correct))
+# with(check_predictions %>% filter(diet_breadth=='specialist'),mean(correct))
+# with(check_predictions %>% filter(diet_breadth=='generalist'),mean(correct))
+# 
+# 
+# ##old
+# ##
 
 specialist_predictions = data_stratified %>%
   filter(diet_breadth=='specialist' & scientificName %in% specialists_wrong_vec==F)  %>%
@@ -977,14 +1028,14 @@ stratified_output$specialists_wrong
 
 
 
-##old  
-  
-globi_degree$region = ifelse(globi_degree$med_long > dividing_long,'east','west')
-globi_degree %>%filter(scientificName =='Andrena erigeniae') %>% select(region)
-globi_degree %>%filter(scientificName =='Diadasia diminuta') %>% select(region)
+# ##old  
+#   
+# globi_degree$region = ifelse(globi_degree$med_long > dividing_long,'east','west')
+# globi_degree %>%filter(scientificName =='Andrena erigeniae') %>% select(region)
+# globi_degree %>%filter(scientificName =='Diadasia diminuta') %>% select(region)
 
 ##remove columns from the dataset we don't want to model
-degree_smaller = globi_degree %>% select(-c('spherical_geometry','n_globi','med_long','bee_genus','bee_family','mean_doy','diet_breadth_detailed', 
+degree_smaller = globi_degree %>% select(-c('n_globi','med_long','bee_genus','bee_family','mean_doy','diet_breadth_detailed', 
                                             'rich_genus','simpson_genus','rich_fam','simpson_fam','area_m2',"quant10","quant90"))
 
 #divide the dataset into training data and testing data
@@ -1549,7 +1600,7 @@ globi_host = globi_specs %>% split(1:nrow(globi_specs)) %>%
   return(row %>% mutate(host=visiting_host))
 
   })   #add 0 for bees that haven't visited their host plant
-globi_host %>% filter(scientificName %in% dupes) %>% distinct(diet_breadth_detailed)
+# globi_host %>% filter(scientificName %in% dupes) %>% distinct(diet_breadth_detailed)
 
 
 # globi_host2 = globi_host %>% bind_rows(add_these)
@@ -1579,6 +1630,9 @@ host_fidelity=globi_host2 %>%
             sum_cits = sum(n_citations[host])/sum(n_citations)) 
 
 # pdf('figures/histogram_visits_hosts_specialists.pdf')
+cex_lab = 1.5
+point_col = adjustcolor('cadetblue',.5)
+
 par(mfrow=c(1,1))
 hist(host_fidelity$sum_n*100,main='pollen specialists - visits to host plants',
      xlab='% of visits to host plants',col=point_col,cex.lab=cex_lab)

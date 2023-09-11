@@ -1022,7 +1022,182 @@ mean(specialist_predictions$model_prediction=='specialist')
 stratified_output$specialists_wrong
 
 
+# for bees on the Jarrod Fowler lists, what % visit their host plants?
+# for the globi data: categorize interaction partner as host or non-host
+# loop through the bee speices in globi_u
+# get their host plants
+# if the interaciton partner is in the family or genus then categorize it as a host
+#fowler_specialists = #fowler[fowler$diet_breadth == 'specialist',]$scientificName
 
+
+# let's exclude bees with fewer than 20 interactions in the globi dataset
+n_threshold = 20
+bigN_bees20=globi_u %>% 
+  group_by(scientificName) %>% 
+  summarize(n=n()) %>% 
+  filter(n>=n_threshold)
+
+globi_summ_NoSizeFilter = globi_u %>% 
+  group_by(scientificName,bee_family,plant_genus,plant_family) %>% 
+  summarize(n_genus=n(),n_citations=n_distinct(sourceCitation)) 
+
+globi_specs = globi_summ_NoSizeFilter %>% 
+  filter(scientificName %in% bigN_bees20$scientificName) %>%
+  left_join(diet_breadth) %>%
+  filter(diet_breadth=='specialist') %>%
+  #filter(n_genus >=5) %>% ##let's exclude interactions with fewer than 5 records
+  mutate(bee_plant = paste(scientificName,plant_genus))
+
+# double check that specialist bees have either family as host rank or genus
+# but not both
+which(fowler_formatted %>% split(.$scientificName) %>%
+        purrr::map_lgl(function(df) n_distinct(df$host_rank)>1))
+
+my_index = which(globi_specs$scientificName  == 'Dufourea virgata')
+a = globi_specs %>% split(1:nrow(globi_specs))
+row = a[[my_index]]
+empty_list = c()
+globi_host = globi_specs %>% split(1:nrow(globi_specs)) %>% 
+  purrr::map_dfr(function(row){
+    
+    (host_plant_df = fowler_formatted %>% 
+       filter(scientificName == row$scientificName[1]))
+    
+    if(unique(host_plant_df$host_rank) =='genus') visiting_host = row$plant_genus  %in% host_plant_df$host
+    if(unique(host_plant_df$host_rank) =='family') visiting_host = row$plant_family %in% host_plant_df$host
+    if(unique(host_plant_df$host_rank) =='tribe') visiting_host = row$plant_family =='Asteraceae'
+    
+    return(row %>% mutate(host=visiting_host))
+    
+  })   #add 0 for bees that haven't visited their host plant
+# globi_host %>% filter(scientificName %in% dupes) %>% distinct(diet_breadth_detailed)
+
+
+# globi_host2 = globi_host %>% bind_rows(add_these)
+globi_host2 = globi_host
+
+# let's load bees in the globi host data that are specialists at the genus level
+# get a list of their hosts in order to search and see if they produce nectar or not
+globi_genus_specs = globi_host2 %>% 
+  filter(diet_breadth_detailed=='genus_specialist') %>%
+  distinct(scientificName) 
+get_nectar = fowler_formatted %>% filter(scientificName %in% globi_genus_specs$scientificName) %>%
+  distinct(host,family)
+# write_csv(get_nectar,'modeling_data/get_nectar.csv')
+
+
+plants_nectar <- read_excel("modeling_data/plants_nectar.xlsx") %>%
+  filter(nectar_status != 'unknown' & !is.na(nectar_status))
+head(plants_nectar)
+
+## what percentage of specialist bees visit their host plants?
+
+globi_host2
+
+host_fidelity=globi_host2 %>%
+  group_by(scientificName) %>%
+  summarize(sum_n=sum(n_genus[host])/sum(n_genus),sample_size = sum(n_genus),
+            sum_cits = sum(n_citations[host])/sum(n_citations)) 
+
+# pdf('figures/histogram_visits_hosts_specialists.pdf')
+cex_lab = 1.5
+point_col = adjustcolor('cadetblue',.5)
+
+par(mfrow=c(1,1))
+hist(host_fidelity$sum_n*100,main='pollen specialists - visits to host plants',
+     xlab='% of visits to host plants',col=point_col,cex.lab=cex_lab)
+# dev.off()
+
+paste0('specialist bees visited their host plants on average ',round(mean(host_fidelity$sum_n*100),2),
+       '% of the time (median = ',round(median(host_fidelity$sum_n*100),2),'%)')
+
+#what percentage of bees visit their host plants 100% of the time?
+paste0(round(mean(host_fidelity$sum_n==1)*100,2),'% of specialist bees visit their host plants 100% of the time')
+
+#get the bees that are least faithful to their host plants
+host_fidelity %>% arrange(sum_n)
+paste('For',sum(host_fidelity$sum_n==0),'specialist bee species, there were no records of the bee visiting their pollen hosts')
+paste('these bees were:')
+(unfaithful_bees = host_fidelity[host_fidelity$sum_n==0,]$scientificName)
+fowler_formatted %>% filter(scientificName %in% unfaithful_bees) %>% distinct(scientificName, host,host_rank)
+
+globi_host %>% filter(scientificName == "Perdita zebrata")
+fowler_formatted %>% filter(scientificName == 'Perdita zebrata') %>% distinct(host)
+
+hist(host_fidelity$sum_cits*100)
+host_fidelity %>% filter(sum_n<.3)
+
+with(host_fidelity,plot(sample_size,sum_n))
+
+host_fidelity %>% 
+  filter(host %in% plants_nectar)
+
+#need to 1) get genus level specs in data what there hosts are
+# 2) join with plants_nectar to get the host plant's nectar status
+# 3) join with host fidelity data
+# 4) plot nectar status of host plant vs host fidelity
+
+#get bee species that are specialists and what there host plants are
+head(globi_genus_specs)
+globi_genus_specs %>% filter(scientificName == "Andrena arabis")
+head(plants_nectar)
+head(globi_genus_specs)
+globi_host %>% filter(host) %>% filter(scientificName %in% globi_genus_specs$scientificName) %>% group_by(scientificName) %>% summarize(n=n()) %>%
+  filter(n !=1)
+globi_host %>% filter(scientificName == "Andrena asteris")
+nectar_fidelity = plants_nectar %>% 
+  rename(plant_genus = host) %>%
+  left_join(globi_host2 %>% filter(host)) %>%
+  filter(!is.na(scientificName)) %>%
+  left_join(host_fidelity, by='scientificName')
+
+#check that each bee species only has one row
+n_recs = nectar_fidelity2 %>% split(.$scientificName) %>% map_dbl(nrow)
+n_recs[n_recs != 1]
+
+# Andrena rehni - specialist on chesnut; doesn't have enough records with this species to show up in the data
+## how to deal with species that have 0% visits to host plant (based on the threshold we're using)
+
+# nectar_fidelity = plants_nectar %>% 
+#   rename(plant_genus = host) %>%
+#   left_join(globi_genus_specs) %>%#join to get genus level specs in data what there hosts are
+#   left_join(host_fidelity, by = 'scientificName')
+par(mfrow=c(1,1))
+with(nectar_fidelity, boxplot(sum_n~nectar_status))
+
+# pdf("figures/nectar_boxplot.pdf")
+with(nectar_fidelity,stripchart(sum_n~nectar_status,
+                                vertical=T,col=point_col,at=c(loc_gen,loc_spec),pch=16,
+                                cex.lab = cex_lab, cex.axis=cex_axis,
+                                xlab = 'plant nectar status',ylab = "specialist bee's fidelity to host plant"))
+with(nectar_fidelity,boxplot(sum_n~nectar_status,col=box_col,add=T,at=c(loc_gen,loc_spec), axes = F,boxwex=c(.35,.35)))
+# dev.off()
+
+with(nectar_fidelity,boxplot(sum_cits ~ nectar_status))
+nectar_fidelity %>% filter(scientificName == 'Andrena erigeniae')
+nectar_fidelity %>% filter(sum_n<.2)
+
+## for both nectar analysis and bee m/f analysis, look at host fidelity as % citations?
+head(nectar_fidelity)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+################
 
 
 
@@ -1552,163 +1727,6 @@ abline(v = n_needed_specs,lty=2)
 
 
 
-# for bees on the Jarrod Fowler lists, what % visit their host plants?
-# for the globi data: categorize interaction partner as host or non-host
-# loop through the bee speices in globi_u
-# get their host plants
-# if the interaciton partner is in the family or genus then categorize it as a host
-#fowler_specialists = #fowler[fowler$diet_breadth == 'specialist',]$scientificName
-
-
-# let's exclude bees with fewer than 20 interactions in the globi dataset
-n_threshold = 20
-bigN_bees20=globi_u %>% 
-  group_by(scientificName) %>% 
-  summarize(n=n()) %>% 
-  filter(n>=n_threshold)
-
-globi_summ_NoSizeFilter = globi_u %>% 
-  group_by(scientificName,bee_family,plant_genus,plant_family) %>% 
-  summarize(n_genus=n(),n_citations=n_distinct(sourceCitation)) 
-
-globi_specs = globi_summ_NoSizeFilter %>% 
-  filter(scientificName %in% bigN_bees20$scientificName) %>%
-  left_join(diet_breadth) %>%
-  filter(diet_breadth=='specialist') %>%
-  #filter(n_genus >=5) %>% ##let's exclude interactions with fewer than 5 records
-  mutate(bee_plant = paste(scientificName,plant_genus))
-
-# double check that specialist bees have either family as host rank or genus
-# but not both
-which(fowler_formatted %>% split(.$scientificName) %>%
-  purrr::map_lgl(function(df) n_distinct(df$host_rank)>1))
-
-my_index = which(globi_specs$scientificName  == 'Dufourea virgata')
-a = globi_specs %>% split(1:nrow(globi_specs))
-row = a[[my_index]]
-empty_list = c()
-globi_host = globi_specs %>% split(1:nrow(globi_specs)) %>% 
-  purrr::map_dfr(function(row){
-  
-  (host_plant_df = fowler_formatted %>% 
-    filter(scientificName == row$scientificName[1]))
-  
-  if(unique(host_plant_df$host_rank) =='genus') visiting_host = row$plant_genus  %in% host_plant_df$host
-  if(unique(host_plant_df$host_rank) =='family') visiting_host = row$plant_family %in% host_plant_df$host
-  if(unique(host_plant_df$host_rank) =='tribe') visiting_host = row$plant_family =='Asteraceae'
-  
-  return(row %>% mutate(host=visiting_host))
-
-  })   #add 0 for bees that haven't visited their host plant
-# globi_host %>% filter(scientificName %in% dupes) %>% distinct(diet_breadth_detailed)
-
-
-# globi_host2 = globi_host %>% bind_rows(add_these)
-globi_host2 = globi_host
-
-# let's load bees in the globi host data that are specialists at the genus level
-# get a list of their hosts in order to search and see if they produce nectar or not
-globi_genus_specs = globi_host2 %>% 
-  filter(diet_breadth_detailed=='genus_specialist') %>%
-  distinct(scientificName) 
-get_nectar = fowler_formatted %>% filter(scientificName %in% globi_genus_specs$scientificName) %>%
-  distinct(host,family)
-# write_csv(get_nectar,'modeling_data/get_nectar.csv')
-
-
-plants_nectar <- read_excel("modeling_data/plants_nectar.xlsx") %>%
-  filter(nectar_status != 'unknown' & !is.na(nectar_status))
-head(plants_nectar)
-
-## what percentage of specialist bees visit their host plants?
-
-globi_host2
-
-host_fidelity=globi_host2 %>%
-  group_by(scientificName) %>%
-  summarize(sum_n=sum(n_genus[host])/sum(n_genus),sample_size = sum(n_genus),
-            sum_cits = sum(n_citations[host])/sum(n_citations)) 
-
-# pdf('figures/histogram_visits_hosts_specialists.pdf')
-cex_lab = 1.5
-point_col = adjustcolor('cadetblue',.5)
-
-par(mfrow=c(1,1))
-hist(host_fidelity$sum_n*100,main='pollen specialists - visits to host plants',
-     xlab='% of visits to host plants',col=point_col,cex.lab=cex_lab)
-# dev.off()
-
-paste0('specialist bees visited their host plants on average ',round(mean(host_fidelity$sum_n*100),2),
-'% of the time (median = ',round(median(host_fidelity$sum_n*100),2),'%)')
-
-#what percentage of bees visit their host plants 100% of the time?
-paste0(round(mean(host_fidelity$sum_n==1)*100,2),'% of specialist bees visit their host plants 100% of the time')
-
-#get the bees that are least faithful to their host plants
-host_fidelity %>% arrange(sum_n)
-paste('For',sum(host_fidelity$sum_n==0),'specialist bee species, there were no records of the bee visiting their pollen hosts')
-paste('these bees were:')
-(unfaithful_bees = host_fidelity[host_fidelity$sum_n==0,]$scientificName)
-fowler_formatted %>% filter(scientificName %in% unfaithful_bees) %>% distinct(scientificName, host,host_rank)
-
-globi_host %>% filter(scientificName == "Perdita zebrata")
-fowler_formatted %>% filter(scientificName == 'Perdita zebrata') %>% distinct(host)
-
-hist(host_fidelity$sum_cits*100)
-host_fidelity %>% filter(sum_n<.3)
-
-with(host_fidelity,plot(sample_size,sum_n))
-
-host_fidelity %>% 
-  filter(host %in% plants_nectar)
-
-#need to 1) get genus level specs in data what there hosts are
-# 2) join with plants_nectar to get the host plant's nectar status
-# 3) join with host fidelity data
-# 4) plot nectar status of host plant vs host fidelity
-
-#get bee species that are specialists and what there host plants are
-head(globi_genus_specs)
-globi_genus_specs %>% filter(scientificName == "Andrena arabis")
-head(plants_nectar)
-head(globi_genus_specs)
-globi_host %>% filter(host) %>% filter(scientificName %in% globi_genus_specs$scientificName) %>% group_by(scientificName) %>% summarize(n=n()) %>%
-  filter(n !=1)
-globi_host %>% filter(scientificName == "Andrena asteris")
-nectar_fidelity = plants_nectar %>% 
-  rename(plant_genus = host) %>%
-  left_join(globi_host2 %>% filter(host)) %>%
-  filter(!is.na(scientificName)) %>%
-  left_join(host_fidelity, by='scientificName')
-
-#check that each bee species only has one row
-n_recs = nectar_fidelity2 %>% split(.$scientificName) %>% map_dbl(nrow)
-n_recs[n_recs != 1]
-
-# Andrena rehni - specialist on chesnut; doesn't have enough records with this species to show up in the data
-## how to deal with species that have 0% visits to host plant (based on the threshold we're using)
-
-# nectar_fidelity = plants_nectar %>% 
-#   rename(plant_genus = host) %>%
-#   left_join(globi_genus_specs) %>%#join to get genus level specs in data what there hosts are
-#   left_join(host_fidelity, by = 'scientificName')
-par(mfrow=c(1,1))
-with(nectar_fidelity, boxplot(sum_n~nectar_status))
-
-# pdf("figures/nectar_boxplot.pdf")
-with(nectar_fidelity,stripchart(sum_n~nectar_status,
-                                  vertical=T,col=point_col,at=c(loc_gen,loc_spec),pch=16,
-                                  cex.lab = cex_lab, cex.axis=cex_axis,
-                                  xlab = 'plant nectar status',ylab = "specialist bee's fidelity to host plant"))
-with(nectar_fidelity,boxplot(sum_n~nectar_status,col=box_col,add=T,at=c(loc_gen,loc_spec), axes = F,boxwex=c(.35,.35)))
-# dev.off()
-
-with(nectar_fidelity,boxplot(sum_cits ~ nectar_status))
-nectar_fidelity %>% filter(scientificName == 'Andrena erigeniae')
-nectar_fidelity %>% filter(sum_n<.2)
-
-## for both nectar analysis and bee m/f analysis, look at host fidelity as % citations?
-head(nectar_fidelity)
 
 # look at the data for Andrena erigeniae 
 # View(globi_r %>% 

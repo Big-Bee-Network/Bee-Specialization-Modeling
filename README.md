@@ -1,5 +1,7 @@
 # Predicting Specialist Bee Species
 
+[![DOI](https://zenodo.org/badge/411849354.svg)](https://zenodo.org/badge/latestdoi/411849354)
+
 ## General workflow for running the analyses:
 
 1. Download full GloBI interaction dataset from [Zenodo](https://zenodo.org/record/7348355#.Y5owy-zMIcQ).

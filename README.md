@@ -49,7 +49,7 @@
 
 12. Run analysis to predict specialist host plants using [scripts/predict specialist hosts.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/predict%20specialist%20hosts.R)
 
-
+13. Run code to look at how often specialist bees visit their host plants using [scripts/specialists-nonhosts.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/specialists-nonhosts.R)
 ## Defintions of column names in *globi_speciesLevelFinal.csv*
 
 | Column Name  | Defintion  | 

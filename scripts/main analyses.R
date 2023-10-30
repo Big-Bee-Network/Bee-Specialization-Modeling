@@ -30,7 +30,10 @@ set.seed(111342)
 globi = vroom("modeling_data/globi_allNamesUpdated.csv") %>%
   mutate(bee_genus = sub(' .*',"",scientificName))
 
-
+View(globi)
+globi %>% group_by(sourceCitation) %>% summarize(n=n())
+globi %>% group_by(sourceBasisOfRecordName) %>% summarize(n=n())
+View(globi %>% filter(is.na(sourceBasisOfRecordName)) %>% group_by(sourceCitation) %>% summarize(n=n()))
 #globi_degree is with the species-level data
 globi_degree =read_csv("modeling_data/globi_speciesLevelFinal.csv")%>% #let's remove the columns we don't care about
   select(-c(bee_genus,diet_breadth_detailed,rich_genus,rich_fam,area_m2,spherical_geometry,mean_doy,quant10,quant90,eigen1,eigen2)) %>%
@@ -148,7 +151,7 @@ i=1
 i=3
 
 
-#let's see if I can get probability from randmo forest models
+#let's see if I can get probability from random forest models
 ##divide the training and testing data
 df_train = data_stratified %>% filter(fold != i) %>% select(-fold,-n_globi)
 df_test = data_stratified %>% filter(fold == i) %>% select(-fold,-n_globi)
@@ -344,7 +347,6 @@ with(var_importance_phy %>% filter(predictor_var %in% top5_phy),
 
 ########Next
 #block the data spatially
-#next let's spatially block the data into k-folds
 #first let's look at the data
 with(data,plot(med_long,med_lat))
 
@@ -495,9 +497,37 @@ with(var_importance_space %>% filter(predictor_var %in% top5_generalists),
 with(var_importance_space %>% filter(predictor_var %in% top5_specialists),
      boxplot(specialist~predictor_var))
 
+#for the spatially blocked output, plot sample size vs whether the classification was right or wrong
+# for this we want both specialists and generalists classified incorrectly
+# (or actually I think we want just generalists)
+gens_wrong_ls =spatial_blocked_output %>% select(generalists_wrong) 
+gens_wrong = gens_wrong_ls[[1]] %>% unlist()
 
-#aggregate all accuracy & auc values from the models
+n_accuracy = globi_degree %>%
+  filter(diet_breadth=='generalist') %>%
+  select(scientificName,n_globi) %>%
+  mutate(predicted_generalist = !scientificName %in% gens_wrong)
 
+#fit logistic regression
+lr = glm(predicted_generalist~n_globi,data=n_accuracy)
+predict_df = data.frame(n_globi = seq(min(n_accuracy$n_globi), max(n_accuracy$n_globi),1))
+predict_df2 = predict_df %>% mutate(odds = predict(lr,predict_df,type='response')) %>% mutate(prob = odds/(1+odds))
+with(n_accuracy,plot(n_globi, predicted_generalist))
+with(predict_df2,lines(n_globi,prob,add=T))
+summary(predict_df2$prob)
+with(globi_degree %>% filter(diet_breadth=='generalist'), plot(n_globi, phylo_simp))
+with(globi_degree %>% filter(diet_breadth=='generalist'), plot(log(n_globi), phylo_simp))
+with(globi_degree %>% filter(diet_breadth=='generalist'), plot(log(n_globi), simpson_genus))
+
+
+#plot phylogenetic diversity between specialist and generalist bees
+# pdf("figures/phylo_div_boxplot.pdf")
+
+with(globi_degree, boxplot(phylo_simp~diet_breadth, ylab = "phylogenetic Simpson diversity", xlab = 'diet breadth',col='lightcyan2',cex.lab=1.3))
+
+# dev.off()
+
+#aggregate all accuracy & AUC values from the models
 stratified_sum = stratified_output %>% 
   select(-fold_left_out,-specialists_wrong,-generalists_wrong) %>%
   mutate(blocking_method = 'random')
@@ -933,4 +963,134 @@ majority_class_predictions = unique(data_space$spatial_block) %>%
 })
 apply(majority_class_predictions, 2, mean)
 mean(majority_class_predictions$overall_accuracy)
+
+
+
+
+#plot accuracy with majority class model added
+# add these to accuracy_long:
+
+all_accuracy = accuracy_long %>% mutate(model = 'random forest') %>%
+  bind_rows(
+    majority_class_predictions %>%
+      mutate(blocking_method = 'spatial') %>%
+      select(blocking_method, everything()) %>%
+      select(-testing_block) %>%
+      pivot_longer(-blocking_method,names_to = 'performance_measure',values_to = 'estimate') %>%
+      mutate(model = 'majority class')
+    
+  ) %>%
+  mutate(blocking_model = paste(blocking_method, model, sep = "_"))
+blocking_cols2 = c("#FFFFB380", "#BEBADA80", "#FB807280","#FB807280")
+#make boxplots of accuracy by blocking method for different performance measures
+# pdf('figures/accuracy_estimates-all.pdf', width =11.5)
+par(mfrow=c(2,2), mar = c(4.2,4.2,5,1), cex.lab = 1.5)
+cex_lab2 = 1.8
+for(i in 1:n_distinct(all_accuracy$performance_measure)){
+  pm = unique(all_accuracy$performance_measure)[i]
+  focal_df = all_accuracy %>%  filter(performance_measure ==pm) 
+  pm2 = sub("_"," ",pm)
+  title = paste0(toupper(substr(pm2,1,1)), substr(pm2,2,nchar(pm2)))
+  my_ylab = 'Accuracy'
+  if(pm=="AUC") {title = "AUC"; my_ylab = 'AUC'}
+  the_col = adjustcolor('plum4',0.6)
+  blocking_cols = adjustcolor(RColorBrewer::brewer.pal(4,'Set3')[c(2,3,4,4)],.5)
+  
+  #next add the boxplot
+  if(i %in% 1:3){
+    
+  
+  with(focal_df,boxplot(estimate~blocking_model,
+                        at = c(1:3,5), names = c("","random forest", "", "majority class"),
+                        col=blocking_cols,xlab = "Model type", 
+                        ylab = my_ylab, main = title, cex.main=1.8,xaxt = 'n'))
+    axis(side = 1, padj = -.2,at = c(1:3,5), labels = c("","random forest","","simple phylogeny"), tick = F, cex.axis = 1.4)
+    
+    with(focal_df, stripchart(estimate~blocking_model,          # Data
+                              method = "jitter", # Random noise
+                              at = c(1:3,5),
+                              pch = 19,   
+                              cex = 1.3,
+                              col = the_col,           # Color of the symbol
+                              vertical = TRUE,   # Vertical mode
+                              add=T))        
+    
+    }
+  if(i==4){
+    with(focal_df,boxplot(estimate~blocking_model,
+                           names = c("","random forest", ""),
+                          col=blocking_cols,xlab = "Model type", 
+                          ylab = my_ylab, main = title, cex.main=1.8,xaxt = "n"))
+    axis(side = 1,padj=-.2,at = 1:3, labels = c("","random forest",""), tick = F, cex.axis = 1.4)
+    
+    legend("bottomright", fill = blocking_cols, legend = c("phylogenetic",'random','spatial'),title = 'Blocking method',bty = 'n')
+    with(focal_df, stripchart(estimate~blocking_model,          # Data
+                              method = "jitter", # Random noise
+                              pch = 19,   
+                              cex = 1.3,
+                              col = the_col,           # Color of the symbol
+                              vertical = TRUE,   # Vertical mode
+                              add=T))        
+    
+    }
+  
+  
+}
+# dev.off()
+
+most_accuracy = all_accuracy %>% filter(blocking_method != 'random')
+#pdf('figures/accuracy_estimates-maintext.pdf', width =8)
+par(mfrow=c(2,2), mar = c(4.2,4.2,5,2), cex.lab = 1.5)
+cex_lab2 = 1.8
+for(i in 1:n_distinct(most_accuracy$performance_measure)){
+  pm = unique(most_accuracy$performance_measure)[i]
+  focal_df = most_accuracy %>%  filter(performance_measure ==pm) 
+  pm2 = sub("_"," ",pm)
+  title = paste0(toupper(substr(pm2,1,1)), substr(pm2,2,nchar(pm2)))
+  my_ylab = 'Accuracy'
+  if(pm=="AUC") {title = "AUC"; my_ylab = 'AUC'}
+  the_col = adjustcolor('plum4',0.6)
+  blocking_cols = adjustcolor(RColorBrewer::brewer.pal(4,'Set3')[c(2,4,4)],.5)
+  
+  #next add the boxplot
+  if(i %in% 1:3){
+    
+    
+    with(focal_df,boxplot(estimate~blocking_model,
+                          at = c(1:2,4), 
+                          col=blocking_cols,xlab = "Model type", 
+                          ylab = my_ylab, main = title, cex.main=1.8,xaxt = 'n'))
+    axis(side = 1, padj = -.2,at = c(1.5,2,4), labels = c("random forest","","simple phylogeny"), tick = F, cex.axis = 1.4)
+    
+    with(focal_df, stripchart(estimate~blocking_model,          # Data
+                              method = "jitter", # Random noise
+                              at = c(1:2,4),
+                              pch = 19,   
+                              cex = 1.3,
+                              col = the_col,           # Color of the symbol
+                              vertical = TRUE,   # Vertical mode
+                              add=T))        
+    
+  }
+  if(i==4){
+    with(focal_df,boxplot(estimate~blocking_model,
+                          names = c("random forest", ""),
+                          col=blocking_cols,xlab = "Model type", 
+                          ylab = my_ylab, main = title, cex.main=1.8,xaxt = "n"))
+    axis(side = 1,padj=-.2,at = c(1.5,2), labels = c("random forest",""), tick = F, cex.axis = 1.4)
+    
+    legend("bottomright", fill = blocking_cols, legend = c("phylogenetic",'spatial'),title = 'Blocking method',bty = 'n')
+    with(focal_df, stripchart(estimate~blocking_model,          # Data
+                              method = "jitter", # Random noise
+                              pch = 19,   
+                              cex = 1.3,
+                              col = the_col,           # Color of the symbol
+                              vertical = TRUE,   # Vertical mode
+                              add=T))        
+    
+  }
+  
+  
+}
+#dev.off()
 

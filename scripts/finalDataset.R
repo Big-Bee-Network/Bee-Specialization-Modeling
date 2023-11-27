@@ -5,43 +5,57 @@ bee_phy = read_csv('modeling_data/bee_phylogenetic_data.csv')
 plant_phy = read_csv("modeling_data/globi_phyloDiv.csv") %>%
   mutate(bee_genus = sub(" .*","",scientificName))
 geo = read_csv('modeling_data/chesshire2023_beeArea-11april2023.csv')
-diet_breadth = read_csv('modeling_data/bee_diet_breadth-7march2023.csv')
+diet_breadth_fowler <- read_csv('modeling_data/bee_diet_breadth-7march2023.csv')
+(diet_breadth_russell <- read_excel("modeling_data/specialistsGeneralists_needRefs 11-27-2023.xlsx") %>%
+  mutate(scientificName <- sub("_", " ", scientificName)))
+(diet_breadth_fowler <- read_csv('modeling_data/bee_diet_breadth-28june2023.csv') %>%
+  mutate(scientificName = ifelse(is.na(scientificName), old_bee_name, scientificName)) %>%
+  filter(!scientificName %in% diet_breadth_russell$scientificName))
 
+#we need a column for "diet_breadth_liberal" 
+####(generalists are anything not on the fowler list)
+#and another column for "diet_breadth_conservative 
+######(generalists need to have data in russell lists)
+#to make the diet_breadth conservative list we will also be using the fowler 
+#data, so combine russell and fowler datasets
+diet_breadth_conservative_df <- diet_breadth_russell %>% 
+  select(scientificName, diet_breadth) %>%
+  mutate(ref = "russell") %>%
+  bind_rows(diet_breadth_fowler %>% 
+              distinct(scientificName, diet_breadth)  %>%
+              mutate(ref = 'fowler'))
+
+#are any of the scientificNames duplicated?
+dupes <- diet_breadth_conservative_df$scientificName[duplicated(diet_breadth_conservative_df$scientificName)]
+diet_breadth_conservative_df %>% filter(scientificName %in% dupes)
 
 #plant_phy has all the bees in globi
 #combine with bee_phy and geo
 #add diet breadth info
 data = plant_phy %>%
   left_join(geo) %>%
-  left_join(bee_phy)  %>% left_join(diet_breadth %>% 
-  distinct(scientificName,diet_breadth,diet_breadth_detailed)) %>%
-  mutate(diet_breadth = ifelse(is.na(diet_breadth),'generalist',diet_breadth),
-         diet_breadth_detailed = ifelse(is.na(diet_breadth_detailed),'generalist',diet_breadth_detailed)) %>%
-  select(scientificName,bee_genus,bee_family,diet_breadth,diet_breadth_detailed,
+  left_join(bee_phy)  %>% left_join(diet_breadth_fowler %>% 
+  distinct(scientificName,diet_breadth)) %>%
+  mutate(diet_breadth_liberal = ifelse(is.na(diet_breadth),'generalist',diet_breadth)) %>%
+  left_join(diet_breadth_conservative_df %>% 
+             rename(diet_breadth_conservative = diet_breadth)) %>%
+  select(scientificName,bee_genus,bee_family,diet_breadth_liberal, diet_breadth_conservative,
          everything()) 
 
+unks <- data %>% filter(is.na(diet_breadth_conservative))
 
-
-#how many specialists and how many generalists?
-specs = data %>% filter(diet_breadth=='specialist')
-gens = data %>% filter(diet_breadth=='generalist')
-
-paste0('there are ', sum(specs$n_globi),' specialists of ', nrow(specs), ' species.')
-paste0('there are ', sum(gens$n_globi),' generalist of ', nrow(gens), ' species.')
 
 #write final dataset to csv
 data %>% filter(is.na(area_m2))
-# write_csv(data,"modeling_data/globi_speciesLevelFinal.csv")
+# write_csv(data,"modeling_data/globi_speciesLevelFinal-27nov2023.csv")
 
 
-
-
-# #variables from the data we care about:
-# # phylo_rich,phylo_simp,n_chesshire,area_ha,mean_doy,eigen1,eigen2, mean_lat,mean_long
-# View(data)
-# View(data %>% 
-#        select(scientificName,phylo_rich,phylo_simp,n_chesshire,area_ha,med_doy,flight_season,med_lat,med_long,eigen1,eigen2))
-# #
-# #let's see if randomForest works with NA values for area
-# library(randomForest)
-# rf = randomForest(as.factor(diet_breadth) ~ phylo_rich + area_ha,importance = T,data=data)
+#i'm curious if any of these unknowns are in wood et al 2023 dataset?
+remove_parenth = function(sp){
+  part1 = sub("\\(.*","",sp)
+  part2 = sub(".*\\) ","",sp)
+  return(paste0(part1,part2))
+}
+wood <- read_excel("modeling_data/wood2023_supp.xlsx") %>%
+  mutate(Species = ifelse( grepl("\\(", Species),remove_parenth(Species),Species ))
+unks %>% filter(scientificName %in%  wood$Species) #only 4...

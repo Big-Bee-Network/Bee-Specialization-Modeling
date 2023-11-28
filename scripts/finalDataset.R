@@ -53,21 +53,23 @@ diet_breadth_conservative_df <- diet_breadth_russell %>%
   select(scientificName, diet_breadth) %>%
   mutate(ref = "russell") %>%
   bind_rows(diet_breadth_fowler_cuckoo %>% 
-              distinct(scientificName, diet_breadth)  
+              distinct(scientificName, diet_breadth, ref)  
               )
 
 #are any of the scientificNames duplicated?
 dupes <- diet_breadth_conservative_df$scientificName[duplicated(diet_breadth_conservative_df$scientificName)]
 diet_breadth_conservative_df %>% filter(scientificName %in% dupes)
 
-
+unique(diet_breadth_conservative_df$diet_breadth)
+diet_breadth_conservative_df %>% filter(scientificName=='Biastes cressoni')
 
 #plant_phy has all the bees in globi
 #combine with bee_phy and geo
 #add diet breadth info
 data = plant_phy %>%
   left_join(geo) %>%
-  left_join(bee_phy)  %>% left_join(diet_breadth_fowler_cuckoo %>% 
+  left_join(bee_phy)  %>% 
+  left_join(diet_breadth_fowler_cuckoo %>% 
   distinct(scientificName,diet_breadth, ref)) %>%
   mutate(diet_breadth_liberal = ifelse(is.na(diet_breadth),'generalist',diet_breadth)) %>%
   left_join(diet_breadth_conservative_df %>% 
@@ -77,6 +79,8 @@ data = plant_phy %>%
 
 unks <- data %>% filter(is.na(diet_breadth_conservative))
 
+unique(data$diet_breadth_conservative)
+unique(data$diet_breadth_liberal)
 
 #write final dataset to csv
 data %>% filter(is.na(area_m2))

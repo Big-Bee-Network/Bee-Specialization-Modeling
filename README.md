@@ -50,15 +50,15 @@
 12. Run analysis to predict specialist host plants using [scripts/predict specialist hosts.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/predict%20specialist%20hosts.R)
 
 13. Run code to look at how often specialist bees visit their host plants using [scripts/specialists-nonhosts.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/specialists-nonhosts.R)
-## Defintions of column names in *globi_speciesLevelFinal.csv*
+## Defintions of column names in *globi_speciesLevelFinal-27nov2023.csv*
 
 | Column Name  | Defintion  | 
 | :------------ |:---------------| 
 | scientificName      | bee species name | 
 | bee_genus      | bee species' genus        |   
 | bee_family | bee species' family        | 
-| diet_breadth | whether bee is a pollen specialist or generalist according to Fowler lists        |
-| diet_breadth_detailed | same as 'diet_breadth' but includes whether specialists are on plant families or genera        | 
+| diet_breadth_conservative | whether bee is a pollen specialist or generalist using conservative criteria to define generalists        |
+| diet_breadth_liberal | whether bee is a pollen specialist or generalist using liberal criteria to define generalists        | 
 | phylo_rich | Faith's phylogenetic diversity of plant genera visited       | 
 | phylo_simp | phylogenetic Simpson diversity of plant genera visited       | 
 | eigen1_plantGenus | first eigenvalue of Morisita-Horn distance-matrix for plant genera visited       | 

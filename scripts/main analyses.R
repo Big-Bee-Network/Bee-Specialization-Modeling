@@ -23,28 +23,45 @@ set.seed(111342)
 
 
 # 
-#pick_criteria=function(){
 print('do you want to define generalists liberally or conservatively?') 
 print('Select 1 for conservative and 2 for liberal: ')
 i = 1
 generalist_criteria <- c('conservative','liberal')[i]
   
 
+#function below is for setting diet breadth to be liberal or conservative criteria
+set_diet_breadth = function(df){
+  if(generalist_criteria == 'conservative') diet_breadth = df$diet_breadth_conservative
+  if(generalist_criteria == 'liberal') diet_breadth = df$diet_breadth_liberal
+  
+  return(diet_breadth)
 
-set_diet_breadth = function(gen_criteria, df){
-  if(gen_criteria == 'conservative') diet_breadth = df$diet_breadth_conservative
-  if(gen_criteria == 'liberal') diet_breadth = df$diet_breadth_liberal
-  return(as.factor(diet_breadth))
   }
+
+#write a function for appending _liberal or _conservative to figure file names
+figure_name <- 'example_figure.pdf'; gen_criteria = generalist_criteria
+rename_figure <- function(figure_name){
+  ext <- sub(".*\\.","",figure_name)
+  name <- sub('\\..*','',figure_name)
+  new_name <- paste0(name, "_", generalist_criteria,'.',ext)
+  return(new_name)
+}
+
+
 # globi_degree is with the species-level data
 globi_degree <- read_csv("modeling_data/globi_speciesLevelFinal-27nov2023.csv") %>% 
   #first we need to define diet-breadth based on liberal or conservative criteria
-  mutate(diet_breadth = set_diet_breadth(generalist_criteria,.)) %>%
+  mutate(diet_breadth = set_diet_breadth(.)) %>%
   # let's remove the columns we don't care about:
   select(-c(bee_genus, rich_genus, rich_fam, area_m2, spherical_geometry, 
             mean_doy, quant10, quant90, eigen1, eigen2, 
-            diet_breadth_conservative, diet_breadth_liberal)) 
-
+            diet_breadth_conservative, diet_breadth_liberal)) %>%
+  #remove cuckoo bees and bees with NA diet breadths 
+  filter(!is.na(diet_breadth)) %>%
+  filter(diet_breadth != 'parasitic') %>%
+  mutate(diet_breadth = as.factor(diet_breadth)) %>%
+  select(scientificName, diet_breadth, everything())
+unique(globi_degree$diet_breadth)
   
 # we need to get rid of phylogenetic distances to bee genera not in the data
 globi_genera <- sub(" .*", "", globi_degree$scientificName)
@@ -89,29 +106,32 @@ globi_broadSources %>%
 # write_csv(sources_table, 'sources_table15nov2023.csv')
 
 
-# also load the fowler data
-fowler_formatted <- read_csv("modeling_data/fowler_formatted-28june2023.csv")
-diet_breadth <- read_csv("modeling_data/bee_diet_breadth-28june2023.csv")
+# # also load the fowler data
+# fowler_formatted <- read_csv("modeling_data/fowler_formatted-28june2023.csv")
+# diet_breadth <- read_csv("modeling_data/bee_diet_breadth-28june2023.csv")
+# 
+# 
+# specialists <- diet_breadth[diet_breadth$diet_breadth == "specialist", ]$scientificName
+# globi_u <- globi %>%
+#   left_join(diet_breadth %>% distinct(scientificName, diet_breadth)) %>%
+#   mutate(diet_breadth = ifelse(is.na(diet_breadth), "generalist", diet_breadth))
+# 
+# # double check no increase in the number of rows
+# nrow(globi) == nrow(globi_u)
+# 
+# # how many records total in our data?
+# # we excluded 8 species that lacked any date info. Get rid of these bee species when calculating n_plants
+# # globi_degree already has these species excluded
+# globi_u_final <- globi_u %>%
+#   filter(scientificName %in% globi_degree$scientificName)
+# nrow(globi_u_final)
+
+# paste0(
+#   "our data has ", sum(globi_degree$n_globi), " records total, with ", nrow(globi_degree), " bee species, and ",
+#   n_distinct(globi_u_final$plant_genus), " plant genera"
+# )
 
 
-specialists <- diet_breadth[diet_breadth$diet_breadth == "specialist", ]$scientificName
-globi_u <- globi %>%
-  left_join(diet_breadth %>% distinct(scientificName, diet_breadth)) %>%
-  mutate(diet_breadth = ifelse(is.na(diet_breadth), "generalist", diet_breadth))
-
-# double check no increase in the number of rows
-nrow(globi) == nrow(globi_u)
-
-# how many records total in our data?
-# we excluded 8 species that lacked any date info. Get rid of these bee species when calculating n_plants
-# globi_degree already has these species excluded
-globi_u_final <- globi_u %>%
-  filter(scientificName %in% globi_degree$scientificName)
-nrow(globi_u_final)
-paste0(
-  "our data has ", sum(globi_degree$n_globi), " records total, with ", nrow(globi_degree), " bee species, and ",
-  n_distinct(globi_u_final$plant_genus), " plant genera"
-)
 # how many records of specialists
 spec_globi <- globi_degree %>% filter(diet_breadth == "specialist")
 gen_globi <- globi_degree %>% filter(diet_breadth == "generalist")
@@ -152,7 +172,7 @@ col_is <- as.vector(strong_cor_i[, 2])
 data.frame(
   var1 = row.names(cor_matrix)[row_is],
   var2 = colnames(cor_matrix)[col_is]
-)[c(-4, -5, -7, -8), ]
+)#[c(-4, -5, -7, -8), ]
 
 # let's get rid of these
 vars_to_remove <- c("phylo_rich", "simpson_fam")
@@ -163,9 +183,8 @@ colnames(predictor_df %>% select(-all_of(vars_to_remove)))
 colnames(globi_degree)[!colnames(globi_degree) %in% colnames(predictor_df)]
 data <- globi_degree %>%
   select(-c(bee_family, -n_globi)) %>%
-  select(-all_of(vars_to_remove)) %>% # remove the vars we don't need
-  mutate(diet_breadth = as.factor(diet_breadth)) # make diet breadth a factor
-k_folds <- 10
+  select(-all_of(vars_to_remove))  # remove the vars we don't need
+k_folds <- 8
 data_stratified <- data %>%
   split(.$diet_breadth) %>%
   map_dfr(function(df) {
@@ -213,6 +232,7 @@ df_test <- data_stratified %>%
 rf <- randomForest(diet_breadth ~ ., data = df_train %>% select(-scientificName), importance = T) # ,na.action=na.omit,auc=T)
 
 rf$votes
+i=4
 
 # stratfied random blocking method
 stratified_output_ls <- 1:k_folds %>%
@@ -604,7 +624,7 @@ with(globi_degree %>% filter(diet_breadth == "generalist"), plot(log(n_globi), s
 
 
 # plot phylogenetic diversity between specialist and generalist bees
-# pdf("figures/phylo_div_boxplot.pdf")
+# pdf(rename_figure("figures/phylo_div_boxplot.pdf"))
 
 with(globi_degree, boxplot(phylo_simp ~ diet_breadth, ylab = "phylogenetic Simpson diversity", xlab = "diet breadth", col = "lightcyan2", cex.lab = 1.3))
 
@@ -639,37 +659,6 @@ accuracy_long <- accuracy_sum %>%
   select(-train_auc) %>%
   pivot_longer(cols = !blocking_method, names_to = "performance_measure", values_to = "estimate")
 
-# make boxplots of accuracy by blocking method for different performance measures
-# pdf('figures/accuracy_estimates.pdf')
-par(mfrow = c(2, 2), mar = c(4.2, 4.2, 5, 1), cex.lab = 1.5)
-for (i in 1:n_distinct(accuracy_long$performance_measure)) {
-  pm <- unique(accuracy_long$performance_measure)[i]
-  focal_df <- accuracy_long %>% filter(performance_measure == pm)
-  pm2 <- sub("_", " ", pm)
-  title <- paste0(toupper(substr(pm2, 1, 1)), substr(pm2, 2, nchar(pm2)))
-  my_ylab <- "Accuracy"
-  if (pm == "AUC") {
-    title <- "AUC"
-    my_ylab <- "AUC"
-  }
-  the_col <- adjustcolor("plum4", 0.6)
-  blocking_cols <- adjustcolor(RColorBrewer::brewer.pal(4, "Set3")[c(2, 3, 4)], .5)
-
-  # next add the boxplot
-  with(focal_df, boxplot(estimate ~ blocking_method,
-    col = blocking_cols, xlab = "Blocking method",
-    ylab = my_ylab, main = title, cex.main = 1.8
-  ))
-  with(focal_df, stripchart(estimate ~ blocking_method, # Data
-    method = "jitter", # Random noise
-    pch = 19,
-    cex = 1.3,
-    col = the_col, # Color of the symbol
-    vertical = TRUE, # Vertical mode
-    add = T
-  ))
-}
-# dev.off()
 
 
 # next let's aggregate all importance values together from all model runs
@@ -737,7 +726,7 @@ my_col <- adjustcolor("skyblue4", .6)
 
 # first add the data points
 # tiff('figures/var_importance2-smallest.tiff', units="in", width=14, height=174, res=1000, compression = 'lzw')
-pdf("figures/var_importance2-main.pdf", width = 18)
+pdf(figure_name("figures/var_importance2-main.pdf", width = 18))
 par(cex.lab = 1.7, mgp = c(3, 1.5, 0), mar = c(5.5, 5.5, 5, 1), mfrow = c(1, 1))
 with(var_top10, stripchart(MeanDecreaseAccuracy ~ predictor_factor, # Data
   method = "jitter", # Random noise
@@ -915,7 +904,7 @@ hist_df_simp <- densities_df_simp %>% mutate(pct = ifelse(category_binary, 1 - p
 
 
 # tiff('figures/important_vars.tiff', units="in", width=7, height=14, res=1000, compression = 'lzw')
-pdf("figures/important_vars-main.pdf", width = 7, height = 10)
+pdf(figure_name("figures/important_vars-main.pdf"), width = 7, height = 10)
 grid.arrange(phylo_simp_graph, simpson_genus_graph)
 dev.off()
 
@@ -1106,7 +1095,7 @@ axis(side = 1, padj = -.2, at = c(1:3, 5), labels = c("", "random forest", "", "
 
 
 # make boxplots of accuracy by blocking method for different performance measures
-pdf("figures/accuracy_estimates-mainDataSupp.pdf", width = 8)
+pdf(figure_name("figures/accuracy_estimates_supp.pdf"), width = 8)
 par(mfrow = c(2, 2), mar = c(4.2, 4.2, 5, 1), cex.lab = 1.5)
 cex_lab2 <- 1.8
 for (i in 1:n_distinct(all_accuracy$performance_measure)) {
@@ -1186,7 +1175,7 @@ with(focal_df, boxplot(estimate ~ blocking_model,
 
 
 
-pdf("figures/accuracy_estimates-Main.pdf", width = 8)
+pdf(figure_name("figures/accuracy_estimates_main.pdf"), width = 8)
 par(mfrow = c(2, 2), mar = c(4.2, 4.2, 5, 2), cex.lab = 1.5)
 cex_lab2 <- 1.8
 for (i in 1:n_distinct(most_accuracy$performance_measure)) {

@@ -18,32 +18,34 @@ library(ROCR)
 library(pdp) # for partial, plotPartial, and grid.arrange functions
 
 
-
 # set the seed
 set.seed(111342)
 
-# upload avery's classifications of specialists / generalstists
-avery <- read_csv("modeling_data/globi_specialists_generalists_ALR 11-1.csv")
 
-# remove anything listed in avery's data as unknown:
-rm_me <- avery %>%
-  filter(diet_breadth_megalist %in% c("unknown", "parasitic"))
-
-reclassify_me <- avery %>%
-  filter(!diet_breadth_megalist %in% c("unknown", "correct", "parasitic")) %>%
-  filter(!is.na(diet_breadth_megalist))
-
-# double check all the changes are specialist to generalist
-reclassify_me %>% distinct(diet_breadth, diet_breadth_megalist)
+# 
+#pick_criteria=function(){
+print('do you want to define generalists liberally or conservatively?') 
+print('Select 1 for conservative and 2 for liberal: ')
+i = 1
+generalist_criteria <- c('conservative','liberal')[i]
+  
 
 
+set_diet_breadth = function(gen_criteria, df){
+  if(gen_criteria == 'conservative') diet_breadth = df$diet_breadth_conservative
+  if(gen_criteria == 'liberal') diet_breadth = df$diet_breadth_liberal
+  return(as.factor(diet_breadth))
+  }
 # globi_degree is with the species-level data
-globi_degree <- read_csv("modeling_data/globi_speciesLevelFinal.csv") %>% # let's remove the columns we don't care about
-  select(-c(bee_genus, diet_breadth_detailed, rich_genus, rich_fam, area_m2, spherical_geometry, mean_doy, quant10, quant90, eigen1, eigen2)) %>%
-  mutate(diet_breadth = as.factor(diet_breadth)) %>%
-  filter(!scientificName %in% rm_me$scientificName) %>% # remove the bees that are unknown or parasitic
-  mutate(diet_breadth = as.factor(ifelse(scientificName %in% reclassify_me$scientificName, "specialist", as.character(diet_breadth)))) # reclassify the bees that need to be reclassified
+globi_degree <- read_csv("modeling_data/globi_speciesLevelFinal-27nov2023.csv") %>% 
+  #first we need to define diet-breadth based on liberal or conservative criteria
+  mutate(diet_breadth = set_diet_breadth(generalist_criteria,.)) %>%
+  # let's remove the columns we don't care about:
+  select(-c(bee_genus, rich_genus, rich_fam, area_m2, spherical_geometry, 
+            mean_doy, quant10, quant90, eigen1, eigen2, 
+            diet_breadth_conservative, diet_breadth_liberal)) 
 
+  
 # we need to get rid of phylogenetic distances to bee genera not in the data
 globi_genera <- sub(" .*", "", globi_degree$scientificName)
 genera_cols <- colnames(globi_degree)[19:length(colnames(globi_degree))]

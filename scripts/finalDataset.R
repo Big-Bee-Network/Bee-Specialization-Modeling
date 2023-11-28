@@ -7,10 +7,12 @@ plant_phy = read_csv("modeling_data/globi_phyloDiv.csv") %>%
 geo = read_csv('modeling_data/chesshire2023_beeArea-11april2023.csv')
 diet_breadth_fowler <- read_csv('modeling_data/bee_diet_breadth-7march2023.csv')
 (diet_breadth_russell <- read_excel("modeling_data/specialistsGeneralists_needRefs 11-27-2023.xlsx") %>%
-  mutate(scientificName <- sub("_", " ", scientificName)))
+  mutate(scientificName =sub("_", " ", scientificName)))
 (diet_breadth_fowler <- read_csv('modeling_data/bee_diet_breadth-28june2023.csv') %>%
   mutate(scientificName = ifelse(is.na(scientificName), old_bee_name, scientificName)) %>%
   filter(!scientificName %in% diet_breadth_russell$scientificName))
+
+
 
 ##load cuckoo bee data
 cuckoos <- read_excel("modeling_data/specialistsGeneralists_needRefs 11-27-2023.xlsx", 
@@ -70,10 +72,10 @@ data = plant_phy %>%
   left_join(geo) %>%
   left_join(bee_phy)  %>% 
   left_join(diet_breadth_fowler_cuckoo %>% 
-  distinct(scientificName,diet_breadth, ref)) %>%
+  distinct(scientificName,diet_breadth)) %>%
   mutate(diet_breadth_liberal = ifelse(is.na(diet_breadth),'generalist',diet_breadth)) %>%
   left_join(diet_breadth_conservative_df %>% 
-             rename(diet_breadth_conservative = diet_breadth)) %>%
+             rename(diet_breadth_conservative = diet_breadth) %>% select(-ref)) %>%
   select(scientificName,bee_genus,bee_family,diet_breadth_liberal, diet_breadth_conservative,
          everything()) 
 
@@ -84,6 +86,8 @@ unique(data$diet_breadth_liberal)
 
 #write final dataset to csv
 data %>% filter(is.na(area_m2))
+
+data %>% group_by(diet_breadth_conservative) %>% summarize(n=n())
 # write_csv(data,"modeling_data/globi_speciesLevelFinal-27nov2023.csv")
 
 

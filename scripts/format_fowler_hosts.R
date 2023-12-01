@@ -7,6 +7,9 @@ library(vroom)
 genus_updates = read_csv('modeling_data/wfo_genus_updates.csv')
 wfo_fams = read_csv('modeling_data/plant_fam_info.csv')
 
+# need to remove bee species that are generalists according to Avery's list
+actually_generalists_df = read_csv("modeling_data/actuallyGeneralists_changeFowler.csv")
+
 #load world flora online data for getting accepted species names
 wfo_data = vroom("/Volumes/Seagate/globi_13dec2022/data/WFO_Backbone/classification.txt") %>%
   mutate(scientificName2 = paste(genus,specificEpithet,infraspecificEpithet)) %>% # add a field with a scientific name for subspecies
@@ -29,7 +32,8 @@ chesshire1 = read_csv('modeling_data/Chesshire2023_nameAlignment-geoUpdate.csv')
 add_chesshire = data.frame(providedName = chesshire1$finalName[!chesshire1$finalName %in% chesshire1$providedName]) %>%
   mutate(finalName = providedName)
 
-chesshire = bind_rows(chesshire1,add_chesshire)
+chesshire = bind_rows(chesshire1,add_chesshire) %>% select(-geo_informed) %>%
+  distinct(providedName, finalName)
 
 # fowler considers bees to be specialists if they use pollen from genera in two different families
 # and we don't. we're going to remove these bees from the fowler list (and won't consider them discrepancies)
@@ -38,11 +42,12 @@ generalists_fowler = c("Andrena candidiformis", "Anthidium mormonum", "Dufourea 
                        "Peponapis michelbacherorum",
                        "Perdita fieldi","Perdita obscurata",
                        "Pseudopanurgus virginicus", "Xenoglossa kansensis","Florilegus condignus")
-
+generalists_russell = actually_generalists_df$scientificName
+generalists_change = c(generalists_fowler, generalists_russell)
 
 #note: some bees on this list are duplicated, if they occur in multiple regions (eg both eastern and central usa)
 fowler <- read_csv("modeling_data/fowler_hostplants.csv") %>%
-  mutate(diet_breadth = ifelse(scientificName %in% generalists_fowler,'generalist','specialist')) %>%
+  mutate(diet_breadth = ifelse(scientificName %in% generalists_change,'generalist','specialist')) %>%
   mutate(host_plant_rank = ifelse(grepl('aceae',host_plant) | grepl('ieae',host_plant),'family','genus')) %>%
   mutate(diet_breadth_detailed = ifelse(host_plant_rank == 'family' & diet_breadth =='specialist','family_specialist','genus_specialist')) %>%
   mutate(diet_breadth_detailed = ifelse(diet_breadth=='generalist','generalist',diet_breadth_detailed))
@@ -54,7 +59,8 @@ check_me = fowler %>% distinct(scientificName,diet_breadth,diet_breadth_detailed
 dupes = check_me$scientificName[duplicated(check_me$scientificName)]
 check_me %>% filter(scientificName %in% dupes) %>% arrange(scientificName)
 fowler %>% filter(scientificName %in% dupes) %>% arrange(scientificName)
-change_me = check_me %>% filter(scientificName %in% dupes) %>% arrange(scientificName) %>%
+change_me = check_me %>% 
+  filter(scientificName %in% dupes) %>% arrange(scientificName) %>%
   split(.$scientificName) %>% purrr::map_dfr(function(df){
     new_db='family_specialist'
     db_broad = 'specialist'
@@ -64,7 +70,9 @@ change_me = check_me %>% filter(scientificName %in% dupes) %>% arrange(scientifi
     data.frame(scientificName = df$scientificName[1],diet_breadth = db_broad,diet_breadth_detailed = new_db)
   })
 
-diet_breadth = check_me %>% filter(!scientificName %in% dupes) %>% bind_rows(change_me)
+diet_breadth = check_me %>% 
+  filter(!scientificName %in% dupes) %>% 
+  bind_rows(change_me)
 
 
 get_host_fowler = fowler %>%
@@ -119,13 +127,18 @@ host_fams = get_host_fowler %>%
   filter(fam_host) %>%
   mutate(host_rank = ifelse(grepl("aceae",new_host),'family','tribe'))
 hosts_long = host_genera %>% mutate(host_rank = 'genus') %>%
-  left_join(fowler %>% distinct(scientificName,host_plant)) %>%
+  left_join(fowler %>% distinct(scientificName,host_plant) %>% filter(scientificName %in% get_host_fowler$scientificName)) %>%
   filter(!scientificName %in% get_host_fowler_fams$scientificName) %>%
   select(scientificName,host_plant,new_host,host_rank) %>%
   bind_rows(host_fams) %>%
   arrange(scientificName)
-hosts_long %>% filter(is.na(new_host))
-hosts_long %>% filter(scientificName=='Andrena melanochroa')
+
+
+host_fams
+host_genera %>% mutate(host_rank = 'genus') %>%
+  left_join(fowler %>% distinct(scientificName,host_plant)) %>% 
+  filter(scientificName=="Florilegus condignus")
+
 
 # check that for species with multiple genera, the genera are all in the same family
 # update species names with wfo
@@ -271,27 +284,31 @@ which(fowler_formatted %>%
 
 
 #next we need to update the bee names using chesshire's methods
-fowler_names_toAlign = data.frame(providedName = unique(fowler_formatted$scientificName))
+fowler_names_toAlign = data.frame(providedName = unique(diet_breadth$scientificName))
 
 slist = fowler_names_toAlign$providedName
 slist[!slist %in% chesshire$providedName]
 
-folwer_updated = fowler_names_toAlign %>%
+fowler_updated = fowler_names_toAlign %>%
   left_join(chesshire) %>%
-  mutate(finalName = ifelse(is.na(finalName),providedName,finalName)) %>% #for bees not in chesshire et al, just use the provided name
-  dplyr::select(-geo_informed)
+  mutate(finalName = ifelse(is.na(finalName),providedName,finalName))  #for bees not in chesshire et al, just use the provided name
 
 #now update the fowler dataframes
 fowler_formatted2=fowler_formatted %>% 
   rename(old_bee_name = scientificName) %>%
-  left_join(folwer_updated %>% rename(old_bee_name = providedName,scientificName = finalName))
+  left_join(fowler_updated %>% 
+              rename(old_bee_name = providedName,scientificName = finalName))
 diet_breadth2 = diet_breadth %>% 
   rename(old_bee_name = scientificName) %>%
-  left_join(folwer_updated %>% rename(old_bee_name = providedName,scientificName = finalName))
+  left_join(fowler_updated %>% 
+              rename(old_bee_name = providedName,scientificName = finalName))
 
+"Florilegus condignus" %in% fowler_formatted2$scientificName
+diet_breadth2 %>% filter(scientificName == "Andrena geranii")
+diet_breadth2 %>% filter(scientificName == "Florilegus condignus")
 
- write_csv(fowler_formatted2,'modeling_data/fowler_formatted-30nov2023.csv')
-# write_csv(diet_breadth2,'modeling_data/bee_diet_breadth-30nov2023.csv')
+# write_csv(fowler_formatted2,'modeling_data/fowler_formatted-30nov2023.csv')
+# write_csv(diet_breadth2,'modeling_data/fowler_bee_diet_breadth-30nov2023.csv')
 
 
 

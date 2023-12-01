@@ -20,9 +20,9 @@ wfo_fams = read_csv('modeling_data/plant_fam_info.csv')
 #load list of Avery's specialists not on fowler list
 (diet_breadth_russell <- read_excel("modeling_data/specialistsGeneralists_needRefs 11-27-2023.xlsx") %>%
     mutate(scientificName =sub("_", " ", scientificName)))
-(diet_breadth_fowler <- read_csv('modeling_data/bee_diet_breadth-28june2023.csv') %>%
+diet_breadth_fowler <- read_csv('modeling_data/fowler_bee_diet_breadth-30nov2023.csv') %>%
     mutate(scientificName = ifelse(is.na(scientificName), old_bee_name, scientificName)) %>%
-    filter(!scientificName %in% diet_breadth_russell$scientificName))
+    filter(!scientificName %in% diet_breadth_russell$scientificName)
 
 #pull out the specialists from the Russell data
 need_update = diet_breadth_russell %>% filter(diet_breadth=='specialist')
@@ -231,15 +231,17 @@ nrow(russell_formatted) == nrow(hosts_short)
 russell_formatted %>% filter(is.na(scientificName) | is.na(host))
 
 #double check that with the name update, no genera in different families
-dupes_f = russell_formatted$scientificName[duplicated(fowler_formatted$scientificName)]
+(dupes_f = russell_formatted$scientificName[duplicated(russell_formatted$scientificName)])
 
 #looks like there are none... this vector should be empty:
 which(russell_formatted %>%
         split(.$scientificName) %>% purrr::map_lgl(function(df) n_distinct(df$host_family)!=1))
 
+russell_formatted %>% filter(scientificName=="Florilegus condignus")
+russell_formatted %>% filter(scientificName=="Andrena geranii")
 
 
- write_csv(russell_formatted,'modeling_data/russell_formatted-30nov2023.csv')
+# write_csv(russell_formatted,'modeling_data/russell_formatted-30nov2023.csv')
 
 
 

@@ -1,136 +1,98 @@
 rm(list=ls())
 library(tidyverse)
-library(furrr)
 library(vroom)
-
-#and also do genus updates with those, since tpl doesn't have a lot of those
-genus_updates = read_csv('modeling_data/wfo_genus_updates.csv')
-wfo_fams = read_csv('modeling_data/plant_fam_info.csv')
+library(readxl)
 
 #load world flora online data for getting accepted species names
 wfo_data = vroom("/Volumes/Seagate/globi_13dec2022/data/WFO_Backbone/classification.txt") %>%
   mutate(scientificName2 = paste(genus,specificEpithet,infraspecificEpithet)) %>% # add a field with a scientific name for subspecies
   mutate(scientificName3 = paste(genus,specificEpithet))
-
-# #load world flora online data - from computer instead of seagate
-# wfo_data = vroom("modeling_data/WFO_Backbone/classification.txt") %>%
-#   mutate(scientificName2 = paste(genus,specificEpithet,infraspecificEpithet)) %>% # add a field with a scientific name for subspecies
-#   mutate(scientificName3 = paste(genus,specificEpithet))
-
 #this genus is not in wfo, and I looked it up manually in catalog of life :
 not_in_wfo = data.frame(fowler = c('Salazaria'),
                         accepted = c("Scutellaria"),
                         family = c("Lamiaceae"),
                         source = c('col'))
 
-#chesshire et al data for aligning names
-chesshire1 = read_csv('modeling_data/Chesshire2023_nameAlignment-geoUpdate.csv') 
-#for final names that also aren't in provided name: add them
-add_chesshire = data.frame(providedName = chesshire1$finalName[!chesshire1$finalName %in% chesshire1$providedName]) %>%
-  mutate(finalName = providedName)
+#and also do genus updates with those, since tpl doesn't have a lot of those
+genus_updates = read_csv('modeling_data/wfo_genus_updates.csv')
+wfo_fams = read_csv('modeling_data/plant_fam_info.csv')
 
-chesshire = bind_rows(chesshire1,add_chesshire)
+#load list of Avery's specialists not on fowler list
+(diet_breadth_russell <- read_excel("modeling_data/specialistsGeneralists_needRefs 11-27-2023.xlsx") %>%
+    mutate(scientificName =sub("_", " ", scientificName)))
+(diet_breadth_fowler <- read_csv('modeling_data/bee_diet_breadth-28june2023.csv') %>%
+    mutate(scientificName = ifelse(is.na(scientificName), old_bee_name, scientificName)) %>%
+    filter(!scientificName %in% diet_breadth_russell$scientificName))
 
-# fowler considers bees to be specialists if they use pollen from genera in two different families
-# and we don't. we're going to remove these bees from the fowler list (and won't consider them discrepancies)
-generalists_fowler = c("Andrena candidiformis", "Anthidium mormonum", "Dufourea cuprea",
-                       "Habropoda laboriosa", "Hesperapis ilicifoliae", "Megachile perihirta",
-                       "Peponapis michelbacherorum",
-                       "Perdita fieldi","Perdita obscurata",
-                       "Pseudopanurgus virginicus", "Xenoglossa kansensis","Florilegus condignus")
+#pull out the specialists from the Russell data
+need_update = diet_breadth_russell %>% filter(diet_breadth=='specialist')
 
-
-#note: some bees on this list are duplicated, if they occur in multiple regions (eg both eastern and central usa)
-fowler <- read_csv("modeling_data/fowler_hostplants.csv") %>%
-  mutate(diet_breadth = ifelse(scientificName %in% generalists_fowler,'generalist','specialist')) %>%
-  mutate(host_plant_rank = ifelse(grepl('aceae',host_plant) | grepl('ieae',host_plant),'family','genus')) %>%
-  mutate(diet_breadth_detailed = ifelse(host_plant_rank == 'family' & diet_breadth =='specialist','family_specialist','genus_specialist')) %>%
-  mutate(diet_breadth_detailed = ifelse(diet_breadth=='generalist','generalist',diet_breadth_detailed))
-
-specialists = fowler[fowler$diet_breadth=='specialist',]$scientificName
-
-#some bees have different host plants on the east/west/central lists - we need to make their diet breadths consistent
-check_me = fowler %>% distinct(scientificName,diet_breadth,diet_breadth_detailed)
-dupes = check_me$scientificName[duplicated(check_me$scientificName)]
-check_me %>% filter(scientificName %in% dupes) %>% arrange(scientificName)
-fowler %>% filter(scientificName %in% dupes) %>% arrange(scientificName)
-change_me = check_me %>% filter(scientificName %in% dupes) %>% arrange(scientificName) %>%
-  split(.$scientificName) %>% purrr::map_dfr(function(df){
-    new_db='family_specialist'
-    db_broad = 'specialist'
-    #if('family_generalist'%in% df$diet_breadth_detailed) new_db <- 'family_specialist'
-    if('generalist' %in% df$diet_breadth_detailed) {new_db <- 'generalist'; db_broad <- 'generalist'}
-    
-    data.frame(scientificName = df$scientificName[1],diet_breadth = db_broad,diet_breadth_detailed = new_db)
-  })
-
-diet_breadth = check_me %>% filter(!scientificName %in% dupes) %>% bind_rows(change_me)
+#load host data and filter
+hosts = read_csv("modeling_data/DATA_bee-taxa-known-hosts_all-plant-taxa_11-27-2023.csv") %>%
+  mutate(scientificName = sub("_", " ", bee)) %>%
+  filter(scientificName %in% need_update$scientificName)
 
 
-get_host_fowler = fowler %>%
-  filter(diet_breadth=='specialist') %>%
-  mutate(fam_host = host_plant_rank=='family')  %>%
-  mutate(new_host = ifelse(fam_host,sub(":.*","",host_plant),host_plant)) %>%
-  mutate(new_host = ifelse(new_host =="Cichorieae","Asteraceae",new_host)) %>%
-  distinct(scientificName,host_plant,new_host,fam_host) 
+#double check none of the specialists on the russell list are on the fowler list
+diet_breadth_russell %>% filter(scientificName %in% diet_breadth_fowler$scientificName) #nope
 
-
-#separate family-level specialists from genus-level specialists
-#genus level specialists will require special formatting to get their pollen hosts
-get_host_fowler_fams = get_host_fowler %>% filter(fam_host)
-unique(get_host_fowler_fams$new_host)
-
-fix_me_df = get_host_fowler %>% 
-  filter(!fam_host)%>% 
-  filter(!scientificName %in% get_host_fowler_fams$scientificName)
-fix_me = unique(fix_me_df$host_plant)
-get_host_fowler %>% filter(scientificName == 'Andrena melanochroa')
-
-# if there are specialists whose host plants are genus-level in one region but 
-# family-level in another, go with the family-level host plant
-fix_me_df %>% filter(scientificName %in% get_host_fowler_fams$scientificName)
-
-#let's redo this so that each genus gets its own row..
-a_string = fix_me[19]
-fix_me[grepl("&",fix_me)]
-
-host_genera = fix_me %>% purrr::map_dfr(function(a_string){
-  string_vec = strsplit(a_string,",")[[1]]
-  host_vec = 1:length(string_vec) %>% purrr::map_chr(function(i){
-    modify_me=string_vec[i]
-    if(i ==1) {
-      keep_me = sub(" .*","",modify_me)
-
-    }
-    if(i != 1 ){
-      modify_me
-      #get rid of first space after second space
-      keep_me = sub(" .*", "",substring(modify_me, 2))
-
-    }
-    return(keep_me)
-    
-  })
-  data.frame(host_plant = a_string, new_host = host_vec)
+#check if any 'specialists' have host plants from multiple families
+hosts %>% split(.$scientificName) %>% map(function(df){
+  if(nrow(df) != 1){
+    count_fams = n_distinct(df$family)
+    if(count_fams>1) {my_return = df$scientificName[1]}
+    else{my_return = NULL}
   
-}) 
+  }else{
+    my_return = NULL
+  }
+  return(my_return)
+}) %>% unlist
+#lets look at these two bees more closely
+hosts %>% filter(scientificName == 'Megachile circumcincta')
+hosts %>% filter(scientificName == 'Hylaeus nelumbonis')
 
-host_fams = get_host_fowler %>% 
-  filter(fam_host) %>%
-  mutate(host_rank = ifelse(grepl("aceae",new_host),'family','tribe'))
-hosts_long = host_genera %>% mutate(host_rank = 'genus') %>%
-  left_join(fowler %>% distinct(scientificName,host_plant)) %>%
-  filter(!scientificName %in% get_host_fowler_fams$scientificName) %>%
-  select(scientificName,host_plant,new_host,host_rank) %>%
-  bind_rows(host_fams) %>%
-  arrange(scientificName)
-hosts_long %>% filter(is.na(new_host))
-hosts_long %>% filter(scientificName=='Andrena melanochroa')
 
+#make data frame with the host plants of these specialists
+#exclude the two bees with multiple host plant families
+hosts_short = hosts %>% split(.$scientificName) %>% map(function(df){
+  if(nrow(df) == 1){
+    
+    #if a bee has one row and genus is not NA its a genus level specialist
+    if(!is.na(df$genus)) new_df = data.frame(scientificName = df$scientificName, 
+                                             host = df$genus, 
+                                             diet_breadth_detailed = 'genus_specialist')
+    
+    #if a bee has one row and genus is NA its a family level specialist
+    if(is.na(df$genus)) new_df = data.frame(scientificName = df$scientificName, 
+                                            host = df$family, 
+                                            diet_breadth_detailed = 'family_specialist')
+    
+  }else{
+    #if a bee has more than one row its a family level specialist 
+    # double check and make sure there's only one family.
+    
+    if(n_distinct(df$family)>1) {new_df <- NULL}
+    else{
+      new_df = data.frame(scientificName = df$scientificName[1], 
+                          host = df$family[1], 
+                          diet_breadth_detailed = 'family_specialist')
+      
+    } 
+    
+  }
+  
+  return(new_df)
+  
+})%>% bind_rows
+
+
+#now update the names of hosts_short
 # check that for species with multiple genera, the genera are all in the same family
 # update species names with wfo
 # then check genera are in the same fam
-update_these_names2 = with(hosts_long, unique(new_host))
+update_these_names2 = with(hosts_short, unique(host))
+
 
 ## this has all the Taxonstand updates from the globi dataset:
 #the code below is  copied and pasted from the name updates for the globi dataset
@@ -140,6 +102,7 @@ check_names = read_csv('modeling_data/plant_list_name_update3.csv')
 checked_genera_is = which(strsplit(check_names$Taxon, ' ') %>% map_lgl(function(vec) length(vec)==1))
 checked_genera = check_names$Taxon[checked_genera_is]
 update_these_names2[update_these_names2 %in% checked_genera]
+update_these_names2[!update_these_names2 %in% checked_genera]
 
 
 tpl_formatted = check_names %>% 
@@ -251,47 +214,32 @@ all_updates = wfo_name_update %>% bind_rows(
   
 )  %>% select(-name_source)
 
-fowler_formatted = hosts_long %>% 
-  rename(old_plant = new_host) %>%
-  left_join(all_updates) %>%
-  rename(host=accepted_name,old_name = old_plant, host_string = host_plant,host_family = accepted_family) %>%
-  select(-accepted_id,-accepted_genus,-taxonomicStatus,-fam_host) %>%
-  select(scientificName,host,host_family,host_rank,old_name,everything())%>% select(-family_source, -source,-plant_genus)
+#any changes
+all_updates %>% filter(old_plant != accepted_name)
 
-nrow(fowler_formatted) == nrow(hosts_long)
+russell_formatted = hosts_short %>% 
+  rename(old_plant = host) %>%
+  left_join(all_updates) %>%
+  rename(host=accepted_name,old_name = old_plant, host_family = accepted_family) %>%
+  select(-accepted_id,-accepted_genus,-taxonomicStatus,-source) %>%
+  mutate(host_rank = ifelse(grepl('family',diet_breadth_detailed),'family','genus'  )  ) %>%
+  select(scientificName,host,host_family,host_rank,old_name,everything()) %>% select(-family_source, -plant_genus)
+
+nrow(russell_formatted) == nrow(hosts_short)
+
+# any NAs
+russell_formatted %>% filter(is.na(scientificName) | is.na(host))
 
 #double check that with the name update, no genera in different families
-dupes_f = fowler_formatted$scientificName[duplicated(fowler_formatted$scientificName)]
-#View(fowler_formatted %>% filter(scientificName %in% dupes_f))
+dupes_f = russell_formatted$scientificName[duplicated(fowler_formatted$scientificName)]
 
 #looks like there are none... this vector should be empty:
-which(fowler_formatted %>%
+which(russell_formatted %>%
         split(.$scientificName) %>% purrr::map_lgl(function(df) n_distinct(df$host_family)!=1))
 
 
 
-#next we need to update the bee names using chesshire's methods
-fowler_names_toAlign = data.frame(providedName = unique(fowler_formatted$scientificName))
-
-slist = fowler_names_toAlign$providedName
-slist[!slist %in% chesshire$providedName]
-
-folwer_updated = fowler_names_toAlign %>%
-  left_join(chesshire) %>%
-  mutate(finalName = ifelse(is.na(finalName),providedName,finalName)) %>% #for bees not in chesshire et al, just use the provided name
-  dplyr::select(-geo_informed)
-
-#now update the fowler dataframes
-fowler_formatted2=fowler_formatted %>% 
-  rename(old_bee_name = scientificName) %>%
-  left_join(folwer_updated %>% rename(old_bee_name = providedName,scientificName = finalName))
-diet_breadth2 = diet_breadth %>% 
-  rename(old_bee_name = scientificName) %>%
-  left_join(folwer_updated %>% rename(old_bee_name = providedName,scientificName = finalName))
-
-
- write_csv(fowler_formatted2,'modeling_data/fowler_formatted-30nov2023.csv')
-# write_csv(diet_breadth2,'modeling_data/bee_diet_breadth-30nov2023.csv')
+ write_csv(russell_formatted,'modeling_data/russell_formatted-30nov2023.csv')
 
 
 

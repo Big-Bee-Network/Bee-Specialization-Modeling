@@ -103,33 +103,13 @@ globi_broadSources %>%
   left_join(source_key) %>%
   group_by(broaderSource) %>%
   summarize(percent = sum(n) / total_n)
-# write_csv(sources_table, 'sources_table15nov2023.csv')
+ # write_csv(sources_table, 'sources_table28nov2023.csv')
 
 
-# # also load the fowler data
-# fowler_formatted <- read_csv("modeling_data/fowler_formatted-28june2023.csv")
-# diet_breadth <- read_csv("modeling_data/bee_diet_breadth-28june2023.csv")
-# 
-# 
-# specialists <- diet_breadth[diet_breadth$diet_breadth == "specialist", ]$scientificName
-# globi_u <- globi %>%
-#   left_join(diet_breadth %>% distinct(scientificName, diet_breadth)) %>%
-#   mutate(diet_breadth = ifelse(is.na(diet_breadth), "generalist", diet_breadth))
-# 
-# # double check no increase in the number of rows
-# nrow(globi) == nrow(globi_u)
-# 
-# # how many records total in our data?
-# # we excluded 8 species that lacked any date info. Get rid of these bee species when calculating n_plants
-# # globi_degree already has these species excluded
-# globi_u_final <- globi_u %>%
-#   filter(scientificName %in% globi_degree$scientificName)
-# nrow(globi_u_final)
-
-# paste0(
-#   "our data has ", sum(globi_degree$n_globi), " records total, with ", nrow(globi_degree), " bee species, and ",
-#   n_distinct(globi_u_final$plant_genus), " plant genera"
-# )
+paste0(
+  "our data has ", sum(globi_degree$n_globi), " records total, with ", nrow(globi_degree), " bee species, and ",
+  n_distinct(globi$plant_genus), " plant genera"
+)
 
 
 # how many records of specialists
@@ -162,7 +142,7 @@ predictor_df <- globi_degree %>%
 cor_matrix <- cor(predictor_df)
 heatmap(cor_matrix)
 
-## hmm phylogenetic richness is strongly  orrelated with several predictors
+## hmm phylogenetic richness is strongly  correlated with several predictors
 cond_matrix <- cor_matrix > .7 & cor_matrix != 1
 strong_cor_i <- which(cond_matrix, arr.ind = T)
 row_is <- as.vector(strong_cor_i[, 1])
@@ -172,7 +152,7 @@ col_is <- as.vector(strong_cor_i[, 2])
 data.frame(
   var1 = row.names(cor_matrix)[row_is],
   var2 = colnames(cor_matrix)[col_is]
-)#[c(-4, -5, -7, -8), ]
+)
 
 # let's get rid of these
 vars_to_remove <- c("phylo_rich", "simpson_fam")
@@ -376,8 +356,10 @@ phylo_blocked_output_ls <- unique(data_phy$bee_family) %>%
     rf_pr_train <- prediction(rf_p_train, df_train$diet_breadth)
     r_auc_train <- performance(rf_pr_train, measure = "auc")@y.values[[1]]
     r_auc_train # 0.956
-
-
+    
+    specialists_wrong <- df_test[!df_test$prediction_correct & df_test$diet_breadth == "specialist", ]$scientificName
+    generalists_wrong <- df_test[!df_test$prediction_correct & df_test$diet_breadth == "generalist", ]$scientificName
+  
     list(
       rf,
       tibble(
@@ -386,11 +368,15 @@ phylo_blocked_output_ls <- unique(data_phy$bee_family) %>%
         specialist_accuracy = mean(df_test[df_test$diet_breadth == "specialist", ]$prediction_correct),
         generalist_accuracy = mean(df_test[df_test$diet_breadth == "generalist", ]$prediction_correct),
         test_auc = r_auc_test,
-        train_auc = r_auc_train,
         specialists_wrong = list(specialists_wrong),
         generalists_wrong = list(generalists_wrong)
-      )
+      ),
+      df_train,
+      df_test
     )
+
+    
+    
   })
 phylo_blocked_output <- phylo_blocked_output_ls %>% map_dfr(function(a_list) a_list[[2]])
 with(
@@ -456,18 +442,32 @@ data_space[data_space$med_long >= lon_seq[3], ]$long_block <- 4
 data_space$spatial_block <- as.numeric(as.factor(paste(data_space$lat_block, data_space$long_block)))
 
 # check and make sure the sample sizes are approximately even in each block
-data_space %>%
+data_space_ns <- data_space %>%
   group_by(spatial_block) %>%
   summarize(n = n())
+
 
 
 data_space2 <- data_space %>%
   select(-all_of(vars_to_remove)) %>%
   select(-n_globi, -bee_family, -lat_block, -long_block)
 
+data_space_means <- data_space2 %>%
+  group_by(spatial_block) %>%
+  summarize(latitude = mean(med_lat), longitude = mean(med_long))
+
 block <- 1
 # plot to double check everything:
 with(data_space2, plot(med_long, med_lat, col = spatial_block))
+with(data_space_means, text(longitude,latitude,label=spatial_block,col='black'))
+
+#let's also look at the prop of specialists/generalists in each region
+data_space %>%
+  group_by(spatial_block, diet_breadth) %>%
+  summarize(n_diet = n()) %>% 
+  left_join(data_space_ns) %>%
+  mutate(prop_diet_breadth= n_diet/n) %>%
+  filter(diet_breadth=='specialist')
 
 # now run the cross validation
 spatial_blocked_output_ls <- 1:n_distinct(data_space2$spatial_block) %>%
@@ -521,14 +521,16 @@ with(
 mean(spatial_blocked_output$overall_accuracy)
 
 # get probability of specialists and generalists
-the_probs <- 1:n_distinct(data_space2$spatial_block) %>%
+the_probs <- 1:n_distinct(data_phy$bee_family) %>%
   purrr::map_dfr(function(i) {
-    my_rf <- spatial_blocked_output_ls[[i]][[1]]
-    my_sp <- spatial_blocked_output_ls[[i]][[3]] %>% select(scientificName, diet_breadth)
+    my_rf <- phylo_blocked_output_ls[[i]][[1]]
+    my_sp <- phylo_blocked_output_ls[[i]][[3]] %>% select(scientificName, diet_breadth)
     prop_df <- my_sp %>%
       bind_cols(data.frame(my_rf$votes)) %>%
       mutate(iteration = i)
   })
+
+
 
 mean_probs <- the_probs %>%
   group_by(scientificName, diet_breadth) %>%
@@ -541,10 +543,12 @@ generalist_probs <- mean_probs %>%
 specialist_probs <- mean_probs %>%
   filter(diet_breadth == "specialist") %>%
   select(scientificName, diet_breadth, prob_generalist) %>%
-  arrange(prob_generalist)
+  mutate(prob_specialist = 1-prob_generalist) %>%
+  arrange(prob_specialist)  %>% select(-prob_generalist)
 
 # write_csv(specialist_probs, "figures/specialist_probabilities.csv")
 # write_csv(generalist_probs, "figures/generalist_probabilities.csv")
+
 #
 # let's look at variable importance
 var_importance_space <- 1:length(spatial_blocked_output_ls) %>% map_dfr(function(i) {
@@ -624,12 +628,17 @@ with(globi_degree %>% filter(diet_breadth == "generalist"), plot(log(n_globi), s
 
 
 # plot phylogenetic diversity between specialist and generalist bees
-# pdf(rename_figure("figures/phylo_div_boxplot.pdf"))
+pdf(rename_figure("figures/phylo_div_boxplot.pdf"))
 
 with(globi_degree, boxplot(phylo_simp ~ diet_breadth, ylab = "phylogenetic Simpson diversity", xlab = "diet breadth", col = "lightcyan2", cex.lab = 1.3))
 
-# dev.off()
-
+ dev.off()
+ 
+# what is the mean difference between specialists and generalists in phylo diversity visited?
+avg_phylo_div=globi_degree %>% group_by(diet_breadth) %>% summarize(phylo_simp = mean(phylo_simp))
+phylo_gen = avg_phylo_div[avg_phylo_div$diet_breadth=='generalist',]$phylo_simp
+phylo_spe = avg_phylo_div[avg_phylo_div$diet_breadth=='specialist',]$phylo_simp
+((phylo_gen-phylo_spe)/phylo_spe)*100
 # aggregate all accuracy & AUC values from the models
 stratified_sum <- stratified_output %>%
   select(-fold_left_out, -specialists_wrong, -generalists_wrong) %>%
@@ -644,6 +653,15 @@ spatial_sum <- spatial_blocked_output %>%
 accuracy_sum <- stratified_sum %>%
   bind_rows(phylo_sum) %>%
   bind_rows(spatial_sum)
+
+accuracy_sum %>% filter(blocking_method != "random") %>%
+  pivot_longer(cols= !'blocking_method', values_to = 'estimate') %>%
+  group_by(name) %>% summarize(mean=mean(estimate))
+
+accuracy_sum %>% filter(blocking_method == "phylogenetic") %>%
+  pivot_longer(cols= !'blocking_method', values_to = 'estimate') %>%
+  group_by(name) %>% summarize(mean=mean(estimate))
+
 
 accuracy_sum %>%
   dplyr::select(blocking_method, everything()) %>%
@@ -703,18 +721,18 @@ rename2 <- data.frame(
 
 vars_ranked$predictor_var[!vars_ranked$predictor_var %in% rename$predictor_var]
 rename_add <- data.frame(
-  predictor_var = c("med_doy", "med_long", "eigen2_plantFam"),
-  predictor_factor = c("Median day of activity", "Median longitude", "Plant family identity (2nd eigenvalue)")
+  predictor_var = c("med_doy", "med_long"),
+  predictor_factor = c("Median day of activity", "Median longitude")
 )
 
 # #make table with importance values for the supplement
 all_var_table <- vars_ranked %>%
-  left_join(rename2 %>% bind_rows(rename_add)) %>%
+  left_join(rename2 %>% bind_rows(rename_add) %>% distinct()) %>%
   mutate(predictor_factor = ifelse(is.na(predictor_factor), predictor_var, predictor_factor)) %>%
   dplyr::select(predictor_factor, mean_importance) %>%
   rename("Predictor variable" = predictor_factor, "Mean importance" = mean_importance)
 
-# write_xlsx(all_var_table,'modeling_data/Importance_predictors.xlsx')
+# write_xlsx(all_var_table,'modeling_data/Importance_predictors-28nov23.xlsx')
 
 # format figure for the paper
 var_top10 <- rename %>%
@@ -726,7 +744,7 @@ my_col <- adjustcolor("skyblue4", .6)
 
 # first add the data points
 # tiff('figures/var_importance2-smallest.tiff', units="in", width=14, height=174, res=1000, compression = 'lzw')
-pdf(figure_name("figures/var_importance2-main.pdf", width = 18))
+pdf(rename_figure("figures/var_importance2-main.pdf"), width = 18)
 par(cex.lab = 1.7, mgp = c(3, 1.5, 0), mar = c(5.5, 5.5, 5, 1), mfrow = c(1, 1))
 with(var_top10, stripchart(MeanDecreaseAccuracy ~ predictor_factor, # Data
   method = "jitter", # Random noise
@@ -747,9 +765,9 @@ dev.off()
 
 ## make partial dependence plots for the predictors
 i <- 1
-partial_ls <- 1:length(spatial_blocked_output_ls) %>% purrr::map(function(i) {
-  my_rf <- spatial_blocked_output_ls[[i]][[1]]
-  df_train <- spatial_blocked_output_ls[[i]][[3]]
+partial_ls <- 1:length(phylo_blocked_output_ls) %>% purrr::map(function(i) {
+  my_rf <- phylo_blocked_output_ls[[i]][[1]]
+  df_train <- phylo_blocked_output_ls[[i]][[3]]
 
   partial_data1 <- partial(my_rf, pred.var = c("phylo_simp"), which.class = "specialist", prob = T, train = df_train) %>%
     rename(prob_specialist_phylo = yhat)
@@ -826,9 +844,9 @@ my_cols2 <- RColorBrewer::brewer.pal(8, "Set2")[4:8]
   geom_line(data = partial_ls[[3]], aes(x = phylo_simp, y = prob_specialist_phylo), color = my_cols[partial_ls[[3]]$model_iteration[1]], lwd = 1) +
   geom_line(data = partial_ls[[4]], aes(x = phylo_simp, y = prob_specialist_phylo), color = my_cols[partial_ls[[4]]$model_iteration[1]], lwd = 1) +
   geom_line(data = partial_ls[[5]], aes(x = phylo_simp, y = prob_specialist_phylo), color = my_cols[partial_ls[[5]]$model_iteration[1]], lwd = 1) +
-  geom_line(data = partial_ls[[6]], aes(x = phylo_simp, y = prob_specialist_phylo), color = my_cols[partial_ls[[6]]$model_iteration[1]], lwd = 1) +
-  geom_line(data = partial_ls[[7]], aes(x = phylo_simp, y = prob_specialist_phylo), color = my_cols[partial_ls[[7]]$model_iteration[1]], lwd = 1) +
-  geom_line(data = partial_ls[[8]], aes(x = phylo_simp, y = prob_specialist_phylo), color = my_cols[partial_ls[[8]]$model_iteration[1]], lwd = 1) +
+  # geom_line(data = partial_ls[[6]], aes(x = phylo_simp, y = prob_specialist_phylo), color = my_cols[partial_ls[[6]]$model_iteration[1]], lwd = 1) +
+  # geom_line(data = partial_ls[[7]], aes(x = phylo_simp, y = prob_specialist_phylo), color = my_cols[partial_ls[[7]]$model_iteration[1]], lwd = 1) +
+  # geom_line(data = partial_ls[[8]], aes(x = phylo_simp, y = prob_specialist_phylo), color = my_cols[partial_ls[[8]]$model_iteration[1]], lwd = 1) +
   theme_bw(base_size = 12) +
   theme(
     # Hide panel borders and remove grid lines
@@ -880,9 +898,9 @@ hist_df_simp <- densities_df_simp %>% mutate(pct = ifelse(category_binary, 1 - p
   geom_line(data = partial_ls[[3]], aes(x = simpson_genus, y = prob_specialist_simp), color = my_cols[partial_ls[[3]]$model_iteration[1]], lwd = 1) +
   geom_line(data = partial_ls[[4]], aes(x = simpson_genus, y = prob_specialist_simp), color = my_cols[partial_ls[[4]]$model_iteration[1]], lwd = 1) +
   geom_line(data = partial_ls[[5]], aes(x = simpson_genus, y = prob_specialist_simp), color = my_cols[partial_ls[[5]]$model_iteration[1]], lwd = 1) +
-  geom_line(data = partial_ls[[6]], aes(x = simpson_genus, y = prob_specialist_simp), color = my_cols[partial_ls[[6]]$model_iteration[1]], lwd = 1) +
-  geom_line(data = partial_ls[[7]], aes(x = simpson_genus, y = prob_specialist_simp), color = my_cols[partial_ls[[7]]$model_iteration[1]], lwd = 1) +
-  geom_line(data = partial_ls[[8]], aes(x = simpson_genus, y = prob_specialist_simp), color = my_cols[partial_ls[[8]]$model_iteration[1]], lwd = 1) +
+  # geom_line(data = partial_ls[[6]], aes(x = simpson_genus, y = prob_specialist_simp), color = my_cols[partial_ls[[6]]$model_iteration[1]], lwd = 1) +
+  # geom_line(data = partial_ls[[7]], aes(x = simpson_genus, y = prob_specialist_simp), color = my_cols[partial_ls[[7]]$model_iteration[1]], lwd = 1) +
+  # geom_line(data = partial_ls[[8]], aes(x = simpson_genus, y = prob_specialist_simp), color = my_cols[partial_ls[[8]]$model_iteration[1]], lwd = 1) +
   theme_bw(base_size = 12) +
   theme(
     # Hide panel borders and remove grid lines
@@ -904,7 +922,7 @@ hist_df_simp <- densities_df_simp %>% mutate(pct = ifelse(category_binary, 1 - p
 
 
 # tiff('figures/important_vars.tiff', units="in", width=7, height=14, res=1000, compression = 'lzw')
-pdf(figure_name("figures/important_vars-main.pdf"), width = 7, height = 10)
+pdf(rename_figure("figures/important_vars-main.pdf"), width = 7, height = 10)
 grid.arrange(phylo_simp_graph, simpson_genus_graph)
 dev.off()
 
@@ -999,6 +1017,11 @@ all_data_props %>% arrange(desc(prop_specialists))
 mean(all_data_props$prop_specialists == 1)
 mean(all_data_props$prop_specialists == 0)
 
+#what are the proportions of specialists in each family?
+data_space %>%
+  group_by(bee_family) %>%
+  summarize(prop_specialists = mean(diet_breadth == "specialist"))
+
 i <- 1
 majority_class_predictions <- unique(data_space$spatial_block) %>%
   map_dfr(function(testing_block) {
@@ -1075,27 +1098,40 @@ all_accuracy <- accuracy_long %>%
 blocking_cols2 <- c("#FFFFB380", "#BEBADA80", "#FB807280", "#FB807280")
 
 
+#
+#how does the simple phylogenetic model compare in performance to 
+#the other models?
+all_accuracy %>%
+  dplyr::select(blocking_model, everything()) %>%
+  dplyr::select(-blocking_method,-model) %>%
+  group_by(blocking_model, performance_measure) %>%
+  summarize(mean = mean(estimate),min=min(estimate), max=max(estimate))
+ 
 # code for double checking things are in the right order in the figs
 par(mfrow = c(1, 1))
 i <- 3
 pm <- unique(all_accuracy$performance_measure)[i]
+title <- "Generalist accuracy"
+my_ylab <- "Generalist accuracy"
+blocking_cols <- adjustcolor(RColorBrewer::brewer.pal(4, "Set3")[c(2, 3, 4, 4)], .5)
 focal_df <- all_accuracy %>%
   filter(performance_measure == pm) %>%
   mutate(blocking_model = factor(blocking_model, levels = c("phylogenetic_random forest", "random_random forest", "spatial_random forest", "spatial_majority class")))
 pm2 <- sub("_", " ", pm)
 with(focal_df, boxplot(estimate ~ blocking_model,
   ylim = c(0.2, 1),
-  at = c(1:3, 5), names = c("", "random forest", "", "majority class"),
   col = blocking_cols, xlab = "Model type",
-  ylab = my_ylab, main = title, cex.main = 1.8, xaxt = "n"
+  ylab = my_ylab, main = title, cex.main = 1.8, 
 ))
-axis(side = 1, padj = -.2, at = c(1:3, 5), labels = c("", "random forest", "", "simple phylogeny"), tick = F, cex.axis = 1.4)
 
 
 
 
 # make boxplots of accuracy by blocking method for different performance measures
-pdf(figure_name("figures/accuracy_estimates_supp.pdf"), width = 8)
+ylim_vec = c(min(all_accuracy$estimate)-.07, 1)
+axis_pos = 0.3
+
+pdf(rename_figure("figures/accuracy_estimates_supp.pdf"), width = 9)
 par(mfrow = c(2, 2), mar = c(4.2, 4.2, 5, 1), cex.lab = 1.5)
 cex_lab2 <- 1.8
 for (i in 1:n_distinct(all_accuracy$performance_measure)) {
@@ -1116,12 +1152,12 @@ for (i in 1:n_distinct(all_accuracy$performance_measure)) {
   # next add the boxplot
   if (i %in% 1:3) {
     with(focal_df, boxplot(estimate ~ blocking_model,
-      ylim = c(0.2, 1),
+      ylim = ylim_vec,
       at = c(1:3, 5), names = c("", "random forest", "", "majority class"),
       col = blocking_cols, xlab = "Model type",
       ylab = my_ylab, main = title, cex.main = 1.8, xaxt = "n"
     ))
-    axis(side = 1, padj = -.2, at = c(1:3, 5), labels = c("", "random forest", "", "simple phylogeny"), tick = F, cex.axis = 1.4)
+    axis(side = 1, padj = axis_pos, at = c(1:3, 5), labels = c("", "random \nforest", "", "simple \nphylogeny"), tick = F, cex.axis = 1.4)
 
     with(focal_df, stripchart(estimate ~ blocking_model, # Data
       method = "jitter", # Random noise
@@ -1136,12 +1172,12 @@ for (i in 1:n_distinct(all_accuracy$performance_measure)) {
   if (i == 4) {
     focal_df2 <- focal_df %>% mutate(blocking_model = as.character(blocking_model))
     with(focal_df2, boxplot(estimate ~ blocking_model,
-      ylim = c(0.2, 1),
+      ylim = ylim_vec,
       names = c("", "random forest", ""),
       col = blocking_cols, xlab = "Model type",
       ylab = my_ylab, main = title, cex.main = 1.8, xaxt = "n"
     ))
-    axis(side = 1, padj = -.2, at = 1:3, labels = c("", "random forest", ""), tick = F, cex.axis = 1.4)
+    axis(side = 1, padj = axis_pos, at = 1:3, labels = c("", "random \nforest", ""), tick = F, cex.axis = 1.4)
 
     legend("bottomright", fill = blocking_cols, legend = c("phylogenetic", "random", "spatial"), title = "Blocking method", bty = "n")
     with(focal_df2, stripchart(estimate ~ blocking_model, # Data
@@ -1166,7 +1202,7 @@ focal_df <- most_accuracy %>%
   mutate(blocking_model = factor(blocking_model, levels = c("phylogenetic_random forest", "random_random forest", "spatial_random forest", "spatial_majority class")))
 pm2 <- sub("_", " ", pm)
 with(focal_df, boxplot(estimate ~ blocking_model,
-  ylim = c(0.2, 1),
+  ylim = ylim_vec,
   at = c(1:3, 5), ,
   col = blocking_cols, xlab = "Model type",
   ylab = my_ylab, main = title, cex.main = 1.8
@@ -1175,7 +1211,7 @@ with(focal_df, boxplot(estimate ~ blocking_model,
 
 
 
-pdf(figure_name("figures/accuracy_estimates_main.pdf"), width = 8)
+pdf(rename_figure("figures/accuracy_estimates_main.pdf"), width = 8)
 par(mfrow = c(2, 2), mar = c(4.2, 4.2, 5, 2), cex.lab = 1.5)
 cex_lab2 <- 1.8
 for (i in 1:n_distinct(most_accuracy$performance_measure)) {
@@ -1197,7 +1233,7 @@ for (i in 1:n_distinct(most_accuracy$performance_measure)) {
   # next add the boxplot
   if (i %in% 1:3) {
     with(focal_df, boxplot(estimate ~ blocking_model,
-      ylim = c(0.2, 1),
+      ylim = ylim_vec,
       at = c(1:2, 4),
       col = blocking_cols, xlab = "Model type",
       ylab = my_ylab, main = title, cex.main = 1.8, xaxt = "n"
@@ -1219,7 +1255,7 @@ for (i in 1:n_distinct(most_accuracy$performance_measure)) {
     with(
       focal_df2,
       boxplot(estimate ~ blocking_model,
-        ylim = c(0.2, 1),
+        ylim = ylim_vec,
         col = blocking_cols, xlab = "Model type",
         ylab = my_ylab, main = title, cex.main = 1.8, xaxt = "n"
       )

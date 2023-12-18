@@ -307,7 +307,45 @@ diet_breadth2 = diet_breadth %>%
 diet_breadth2 %>% filter(scientificName == "Andrena geranii")
 diet_breadth2 %>% filter(scientificName == "Florilegus condignus")
 
-# write_csv(fowler_formatted2,'modeling_data/fowler_formatted-30nov2023.csv')
+
+# reformat so that any bee with multiple genera in a family is considered a family
+# level specialist
+
+hosts_short = fowler_formatted2 %>% split(.$scientificName) %>% purrr::map(function(df){
+  if(nrow(df) == 1){
+    
+    new_df = data.frame(
+      scientificName = df$scientificName, 
+      host = df$host, 
+      host_rank = df$host_rank,
+      diet_breadth_detailed = ifelse(df$host_rank == 'family',"family_specialist","genus_specialist")
+
+    )
+    
+  }else{
+    #if a bee has more than one row its a family level specialist 
+    # double check and make sure there's only one family.
+    
+    if(n_distinct(df$family)>1) {
+      new_df <- NULL}
+    else{
+      new_df = data.frame(
+        scientificName = df$scientificName[1], 
+        host = df$host_family[1], 
+        host_rank = 'family',
+        diet_breadth_detailed ="family_specialist"
+        
+      )
+      
+    } 
+    
+  }
+  
+  return(new_df)
+  
+})%>% bind_rows
+
+# write_csv(hosts_short,'modeling_data/fowler_formatted-30nov2023.csv')
 # write_csv(diet_breadth2,'modeling_data/fowler_bee_diet_breadth-30nov2023.csv')
 
 

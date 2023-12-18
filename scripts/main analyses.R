@@ -47,6 +47,17 @@ rename_figure <- function(figure_name){
   return(new_name)
 }
 
+#what percentage of bee species are missing diet breadth information?
+globi_degree_all <- read_csv("modeling_data/globi_speciesLevelFinal-27nov2023.csv")
+mean(is.na(globi_degree_all$diet_breadth_conservative))*100
+
+# what is the phylogenetic breakdown of the unknowns
+unknowns <-globi_degree_all  %>% filter(is.na(diet_breadth_conservative))
+unknowns %>% 
+  group_by(bee_family) %>%
+  summarize(n=n()) %>% 
+  mutate(per = 100*n/sum(n)) %>%
+  ungroup
 
 # globi_degree is with the species-level data
 globi_degree <- read_csv("modeling_data/globi_speciesLevelFinal-27nov2023.csv") %>% 
@@ -62,13 +73,13 @@ globi_degree <- read_csv("modeling_data/globi_speciesLevelFinal-27nov2023.csv") 
   mutate(diet_breadth = as.factor(diet_breadth)) %>%
   select(scientificName, diet_breadth, everything())
 unique(globi_degree$diet_breadth)
-  
+
 # we need to get rid of phylogenetic distances to bee genera not in the data
 globi_genera <- sub(" .*", "", globi_degree$scientificName)
 genera_cols <- colnames(globi_degree)[19:length(colnames(globi_degree))]
 phylo_dist_rm <- genera_cols[!genera_cols %in% globi_genera]
 n_distinct(globi_genera)
-
+unique(globi_genera)
 globi_degree <- globi_degree %>% select(-phylo_dist_rm)
 
 # load the globi data
@@ -214,6 +225,31 @@ rf <- randomForest(diet_breadth ~ ., data = df_train %>% select(-scientificName)
 rf$votes
 i=4
 
+
+
+library(caret)
+
+#
+get_performance <- function(pred, df_test){
+  
+  predicted <- as.factor(as.vector(pred))
+  actual <- df_test$diet_breadth
+  
+  #this function is to get these performance metrics
+  #f1 scores for specialists and generalists
+  (cm_specs <- confusionMatrix(predicted, actual, mode = 'everything', positive ='specialist'))
+  (cm_gens <- confusionMatrix(predicted, actual, mode = 'everything', positive ='generalist'))
+ output <- tibble(
+   f1_specs = cm_specs$byClass[7],
+   f1_gens = cm_gens$byClass[7],
+   balanced_accuracy = cm_gens$byClass[11]
+   
+ ) 
+ return(output)
+
+
+  }
+
 # stratfied random blocking method
 stratified_output_ls <- 1:k_folds %>%
   purrr::map(function(i) {
@@ -241,12 +277,7 @@ stratified_output_ls <- 1:k_folds %>%
     r_auc_test # 0.956
 
 
-    ## auc of the training data
-    rf_p_train <- predict(rf, type = "prob", newdata = df_train)[, 2]
-    rf_pr_train <- prediction(rf_p_train, df_train$diet_breadth)
-    r_auc_train <- performance(rf_pr_train, measure = "auc")@y.values[[1]]
-    r_auc_train # 0.956
-
+  
     list(
       rf,
       tibble(
@@ -255,10 +286,9 @@ stratified_output_ls <- 1:k_folds %>%
         specialist_accuracy = mean(df_test[df_test$diet_breadth == "specialist", ]$prediction_correct),
         generalist_accuracy = mean(df_test[df_test$diet_breadth == "generalist", ]$prediction_correct),
         test_auc = r_auc_test,
-        train_auc = r_auc_train,
         specialists_wrong = list(specialists_wrong),
         generalists_wrong = list(generalists_wrong)
-      )
+      ) %>% bind_cols(get_performance(pred,df_test))
     )
   })
 stratified_output <- stratified_output_ls %>% map_dfr(function(a_list) a_list[[2]])
@@ -312,9 +342,30 @@ with(
 globi_degree %>%
   group_by(diet_breadth, bee_family) %>%
   summarize(n = n())
+
+#fam sample sizes
 globi_degree %>%
-  group_by(bee_family) %>%
+  group_by(bee_family,diet_breadth) %>%
   summarize(n = n())
+globi_degree %>%
+  group_by(diet_breadth, bee_family) %>%
+  summarize(n = n()) %>%
+  group_by(bee_family) %>%
+  mutate(per =  100 *n/sum(n)) %>%
+  ungroup()
+
+per_genus <- globi_degree %>%
+  mutate(bee_genus = sub(" .*","",scientificName)) %>%
+  group_by(diet_breadth, bee_genus) %>%
+  summarize(n = n()) %>%
+  group_by(bee_genus) %>%
+  mutate(per =  100 *n/sum(n)) %>%
+  ungroup()
+all_gens = per_genus %>% filter(per ==100 & diet_breadth=='generalist')
+all_specs = per_genus %>% filter(per ==100 & diet_breadth=='specialist')
+n_genera = n_distinct(per_genus$bee_genus)
+nrow(all_specs)/n_genera
+nrow(all_gens)/n_genera
 
 data_phy <- globi_degree %>%
   mutate(bee_family = ifelse(bee_family %in% c("Colletidae", "Melittidae"), "Colletidae_Melittidae", bee_family)) %>%
@@ -370,7 +421,7 @@ phylo_blocked_output_ls <- unique(data_phy$bee_family) %>%
         test_auc = r_auc_test,
         specialists_wrong = list(specialists_wrong),
         generalists_wrong = list(generalists_wrong)
-      ),
+      ) %>% bind_cols(get_performance(pred,df_test)),
       df_train,
       df_test
     )
@@ -507,7 +558,7 @@ spatial_blocked_output_ls <- 1:n_distinct(data_space2$spatial_block) %>%
         test_auc = r_auc_test,
         specialists_wrong = list(specialists_wrong),
         generalists_wrong = list(generalists_wrong)
-      ),
+      )%>% bind_cols(get_performance(pred,df_test)),
       df_train,
       df_test
     )
@@ -661,11 +712,12 @@ accuracy_sum %>% filter(blocking_method != "random") %>%
 accuracy_sum %>% filter(blocking_method == "phylogenetic") %>%
   pivot_longer(cols= !'blocking_method', values_to = 'estimate') %>%
   group_by(name) %>% summarize(mean=mean(estimate))
-
+accuracy_sum %>% filter(blocking_method == "spatial") %>%
+  pivot_longer(cols= !'blocking_method', values_to = 'estimate') %>%
+  group_by(name) %>% summarize(mean=mean(estimate))
 
 accuracy_sum %>%
   dplyr::select(blocking_method, everything()) %>%
-  select(-train_auc) %>%
   pivot_longer(cols = !blocking_method, names_to = "performance_measure", values_to = "estimate") %>%
   group_by(blocking_method, performance_measure) %>%
   summarize(mean = mean(estimate), min = min(estimate), max = max(estimate))
@@ -674,7 +726,6 @@ accuracy_sum %>%
 accuracy_long <- accuracy_sum %>%
   dplyr::select(blocking_method, everything()) %>%
   rename(AUC = test_auc) %>%
-  select(-train_auc) %>%
   pivot_longer(cols = !blocking_method, names_to = "performance_measure", values_to = "estimate")
 
 
@@ -692,42 +743,36 @@ top10_all <- vars_ranked[1:10, ]$predictor_var
 with(var_importance_all %>% filter(predictor_var %in% top10_all), boxplot(MeanDecreaseAccuracy ~ predictor_var))
 
 
-rename <- data.frame(
+
+rename_all <- data.frame(
   predictor_var = c(
     "phylo_simp", "simpson_genus", "eigen2_plantGenus", "n_chesshire", "area_ha",
-    "med_lat", "eigen2_plantFam", "flight_season", "eigen1_plantFam", "eigen1_plantGenus"
+    "med_lat", "eigen2_plantFam", "flight_season", "eigen1_plantFam", "eigen1_plantGenus",
+    "med_doy", "med_long"
   ),
   predictor_factor = c(
-    "Phylogenetic \ndiversity", "Simpson \ndiversity",
-    "Plant genus identity \n(2nd eigenvalue)", "Regional \nabundance", "Area (ha)",
-    "Median latitude", "Plant family identity \n(2nd eigenvalue)", "Flight season", "Plant family identity \n(1st eigenvalue)", "Plant genus identity \n(1st eigenvalue)"
+    "Plant \nphylogenetic \ndiversity", "Plant Simpson \ndiversity",
+    "Plant genus \nidentity (2nd \neigenvalue)", "Regional \nabundance", "Area \n(ha)",
+    "Median \nlatitude", "Plant family \nidentity (2nd \neigenvalue)", "Flight \nseason", 
+    "\nPlant family \nidentity (1st \neigenvalue)", "Plant genus \nidentity (1st \neigenvalue)",
+    "Median day \nof activity", "Median longitude"
   )
-) %>%
-  mutate(predictor_factor = factor(predictor_factor, levels = predictor_factor[10:1]))
-
-rename2 <- data.frame(
-  predictor_var = c(
-    "phylo_simp", "simpson_genus", "eigen2_plantGenus", "n_chesshire", "area_ha",
-    "med_lat", "eigen2_plantFam", "flight_season", "eigen1_plantFam", "eigen1_plantGenus"
-  ),
-  predictor_factor = c(
-    "Phylogenetic \ndiversity", "Simpson \ndiversity",
-    "Plant genus identity \n(2nd eigenvalue)", "Regional \nabundance", "Area (ha)",
-    "Median latitude", "Plant family identity \n(2nd eigenvalue)", "Flight season", "Plant family identity \n(1st eigenvalue)", "Plant genus identity \n(1st eigenvalue)"
-  )
-) %>%
-  mutate(predictor_factor = factor(predictor_factor, levels = predictor_factor[1:10]))
+) %>% left_join(vars_ranked) %>%
+  arrange(desc(mean_importance)) 
+rename2 <- rename_all[10:1,] %>%
+  mutate(predictor_factor = factor(predictor_factor, levels = predictor_factor))
 
 
-vars_ranked$predictor_var[!vars_ranked$predictor_var %in% rename$predictor_var]
+# vars_ranked$predictor_var[!vars_ranked$predictor_var %in% rename$predictor_var]
 rename_add <- data.frame(
   predictor_var = c("med_doy", "med_long"),
-  predictor_factor = c("Median day of activity", "Median longitude")
+  predictor_factor = c("Median day \nof activity", "Median longitude")
 )
 
 # #make table with importance values for the supplement
 all_var_table <- vars_ranked %>%
-  left_join(rename2 %>% bind_rows(rename_add) %>% distinct()) %>%
+  left_join(rename_all %>% select(-mean_importance) %>% distinct()) %>%
+  mutate(predictor_factor = as.character(predictor_factor)) %>%
   mutate(predictor_factor = ifelse(is.na(predictor_factor), predictor_var, predictor_factor)) %>%
   dplyr::select(predictor_factor, mean_importance) %>%
   rename("Predictor variable" = predictor_factor, "Mean importance" = mean_importance)
@@ -735,31 +780,36 @@ all_var_table <- vars_ranked %>%
 # write_xlsx(all_var_table,'modeling_data/Importance_predictors-28nov23.xlsx')
 
 # format figure for the paper
-var_top10 <- rename %>%
-  left_join(var_importance_all)
+var_top10 <- rename2 %>%
+  left_join(var_importance_all )
 
 # var_importance_all %>% left_join(rename)
 
 my_col <- adjustcolor("skyblue4", .6)
 
+
+
 # first add the data points
-# tiff('figures/var_importance2-smallest.tiff', units="in", width=14, height=174, res=1000, compression = 'lzw')
-pdf(rename_figure("figures/var_importance2-main.pdf"), width = 18)
-par(cex.lab = 1.7, mgp = c(3, 1.5, 0), mar = c(5.5, 5.5, 5, 1), mfrow = c(1, 1))
+cex_axis=1.3
+tiff(rename_figure('figures/var_importance2-main.tiff'), units="in", width=20, height=12, res=1000, compression = 'lzw')
+# pdf(rename_figure("figures/var_importance2-main.pdf"), width = 18)
+par(cex.lab = 2, mgp = c(5.5, 3.2, 0), mar = c(7, 7.3, 5, 1), mfrow = c(1, 1))
 with(var_top10, stripchart(MeanDecreaseAccuracy ~ predictor_factor, # Data
   method = "jitter", # Random noise
   pch = 19,
   cex = 1.5,
+  cex.axis=cex_axis,
   col = my_col, # Color of the symbol
   vertical = TRUE, # Vertical mode
   xlab = "",
   ylab = "Importance (mean decrase in model accuracy)"
 ))
-mtext("Predictor Variable", side = 1, line = 4, cex = 1.7)
+mtext("Predictor Variable", side = 1, line = 5.5, cex = 2)
 # next add the boxplot
 with(var_top10, boxplot(MeanDecreaseAccuracy ~ predictor_factor,
-  col = adjustcolor("white", 0), add = T
-))
+  col = adjustcolor("white", 0), add = T, cex.axis = cex_axis
+
+  ))
 dev.off()
 
 
@@ -819,7 +869,8 @@ densities_df <- data_space2 %>%
       mutate(category_binary = df$category_binary[1])
   })
 
-hist_df <- densities_df %>% mutate(pct = ifelse(category_binary, 1 - percent_dens, percent_dens))
+hist_df <- densities_df %>% 
+  mutate(pct = ifelse(category_binary, 1 - percent_dens, percent_dens))
 
 
 
@@ -980,7 +1031,7 @@ spatial_blocked_output_np <- unique(data_space3$spatial_block) %>%
       test_auc = r_auc_test,
       train_auc = r_auc_train,
       specialists_wrong = list(specialists_wrong)
-    )
+    )%>% bind_cols(get_performance(pred,df_test))
   })
 spatial_blocked_output_np
 with(
@@ -1073,7 +1124,7 @@ majority_class_predictions <- unique(data_space$spatial_block) %>%
       overall_accuracy = mean(check_predictions$correct),
       specialist_accuracy = with(check_predictions %>% filter(diet_breadth == "specialist"), mean(correct)),
       generalist_accuracy = with(check_predictions %>% filter(diet_breadth == "generalist"), mean(correct))
-    )
+    ) %>% mutate(balanced_accuracy = mean(c(specialist_accuracy, generalist_accuracy)))
   })
 apply(majority_class_predictions, 2, mean)
 mean(majority_class_predictions$overall_accuracy)
@@ -1094,7 +1145,7 @@ all_accuracy <- accuracy_long %>%
       pivot_longer(-blocking_method, names_to = "performance_measure", values_to = "estimate") %>%
       mutate(model = "majority class")
   ) %>%
-  mutate(blocking_model = paste(blocking_method, model, sep = "_"))
+  mutate(blocking_model = paste(blocking_method, model, sep = "_")) %>% filter(!performance_measure %in% c('overall_accuracy', 'f1_specs', 'f1_gens'))
 blocking_cols2 <- c("#FFFFB380", "#BEBADA80", "#FB807280", "#FB807280")
 
 
@@ -1131,11 +1182,14 @@ with(focal_df, boxplot(estimate ~ blocking_model,
 ylim_vec = c(min(all_accuracy$estimate)-.07, 1)
 axis_pos = 0.3
 
-pdf(rename_figure("figures/accuracy_estimates_supp.pdf"), width = 9)
+# pdf(rename_figure("figures/accuracy_estimates_supp.pdf"), width = 9)
+tiff(rename_figure("figures/accuracy_estimates_supp.tiff"), width = 8, height =8, units = 'in', res = 1000, compression = 'lzw')
+
 par(mfrow = c(2, 2), mar = c(4.2, 4.2, 5, 1), cex.lab = 1.5)
 cex_lab2 <- 1.8
 for (i in 1:n_distinct(all_accuracy$performance_measure)) {
-  pm <- unique(all_accuracy$performance_measure)[i]
+
+    pm <- unique(all_accuracy$performance_measure)[c(1,2,4,3)][i]
   focal_df <- all_accuracy %>%
     filter(performance_measure == pm) %>%
     mutate(blocking_model = factor(blocking_model, levels = c("phylogenetic_random forest", "random_random forest", "spatial_random forest", "spatial_majority class")))
@@ -1192,7 +1246,7 @@ for (i in 1:n_distinct(all_accuracy$performance_measure)) {
 }
 dev.off()
 
-most_accuracy <- all_accuracy %>% filter(blocking_method != "random")
+most_accuracy <- all_accuracy %>% filter(blocking_method != c("random"))
 
 par(mfrow = c(1, 1))
 i <- 3
@@ -1208,14 +1262,16 @@ with(focal_df, boxplot(estimate ~ blocking_model,
   ylab = my_ylab, main = title, cex.main = 1.8
 ))
 
+# tiff(rename_figure('figures/var_importance2-main.tiff'), units="in", width=20, height=12, res=1000, compression = 'lzw')
 
 
 
-pdf(rename_figure("figures/accuracy_estimates_main.pdf"), width = 8)
+# pdf(rename_figure("figures/accuracy_estimates_main.pdf"), width = 8)
+tiff(rename_figure("figures/accuracy_estimates_main.tiff"), width = 8, height =8, units = 'in', res = 1000, compression = 'lzw')
 par(mfrow = c(2, 2), mar = c(4.2, 4.2, 5, 2), cex.lab = 1.5)
 cex_lab2 <- 1.8
 for (i in 1:n_distinct(most_accuracy$performance_measure)) {
-  pm <- unique(most_accuracy$performance_measure)[i]
+  pm <- unique(all_accuracy$performance_measure)[c(1,2,4,3)][i]
   focal_df <- most_accuracy %>%
     filter(performance_measure == pm) %>%
     mutate(blocking_model = factor(blocking_model, levels = c("phylogenetic_random forest", "spatial_random forest", "spatial_majority class")))

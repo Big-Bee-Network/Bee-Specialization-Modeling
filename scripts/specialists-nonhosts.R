@@ -79,7 +79,6 @@ globi_host = globi_specs %>% split(1:nrow(globi_specs)) %>%
     
   })   #add 0 for bees that haven't visited their host plant
 dupes = globi_host[duplicated(globi_host$scientificName),]$scientificName
-globi_host %>% filter(scientificName %in% dupes) %>% distinct(diet_breadth_detailed)
 globi_host %>% select(scientificName,plant_genus,host)
 
 ## what percentage of specialist bees visit their host plants?
@@ -129,12 +128,22 @@ host_fidelity %>% filter(sum_n<.3)
 
 
 #is host fidelity a sampling artificat?
-with(host_fidelity,plot(sample_size,sum_n, xlab = "Sample size", ylab = "% of visits to host plants", 
+with(host_fidelity,plot(sample_size, sum_n, xlab = "Sample size", ylab = "% of visits to host plants", 
                         cex.lab=cex_lab, cex.axis = cex_axis, pch = 16, col = adjustcolor('cadetblue',.5)))
 
 #what are low host fidelity bees with large sample sizes?
-host_fidelity %>% filter(sample_size >200 & sum_n<0.5) %>% arrange(desc(sample_size))
+unfaithful<-host_fidelity %>% 
+  filter(sample_size >200 & sum_n<0.5) %>% 
+  arrange(desc(sample_size))
 
+#make a table for the appendix
+#need to add hosts
+unfaithful_joined = unfaithful %>% left_join(hosts) %>%
+  select(scientificName, host, host_rank, sum_n, sample_size) %>%
+  rename(Bee=scientificName, 'Proportion of visits to host' = sum_n, 
+         Host = host, "Host rank" = host_rank, 'Sample size' = sample_size)
+
+# write_xlsx(unfaithful_joined,'modeling_data/unfaithful_pollen_specialists.xlsx')
 
 ## what about male vs female?
 data.frame(globi_u %>% 
@@ -230,7 +239,7 @@ loc_gen=1.2; loc_spec=1.8
 box_col = adjustcolor('white',0)
 
 
- pdf('figures/males_v_females.pdf')
+# pdf('figures/males_v_females.pdf')
 par(mfrow=c(1,1))
 with(hosts_by_sex_bigN,stripchart(sum_n~sex,
                                   vertical=T,col=point_col,at=c(loc_gen,loc_spec),pch=16,
@@ -238,20 +247,30 @@ with(hosts_by_sex_bigN,stripchart(sum_n~sex,
                                   xlab = 'Bee sex',ylab = '% of visits to host plant'))
 for(i in 1:nrow(sexed_wide)){segments(loc_gen, sexed_wide$female[i], loc_spec, sexed_wide$male[i],lty=2,col=adjustcolor('black',.3))}
 with(hosts_by_sex_bigN,boxplot(sum_n~sex,col=box_col,add=T,at=c(loc_gen,loc_spec), axes = F,boxwex=c(.35,.35)))
- dev.off()
+# dev.off()
 
 #get sample sizes
 paste0('there are ', n_distinct(hosts_by_sex_bigN$scientificName), ' species with ', sum(hosts_by_sex_bigN$sample_size), ' total records')
 
 
+#calculate pearson correlation coefficient
+pearson <- with(host_fidelity ,cor(log10(sample_size), sum_n*100))
+#get slope of relationship
+coefs = with(host_fidelity %>% mutate(logN = log10(sample_size),per = 100*sum_n), coef(lm(per~logN)))
+my_lm = with(host_fidelity %>% mutate(logN = log10(sample_size),per = 100*sum_n), lm(per~logN))
 
-
+round_pearson = round(pearson,2)
 #combine the two post-hoc figs together
- pdf('figures/host_fidelity_posthoc-1dec2023.pdf', width = 12)
+# pdf('figures/host_fidelity_posthoc-1dec2023.pdf', width = 12)
+tiff("figures/host_fidelity_posthoc-1dec2023.tiff", width = 12, height =8, units = 'in', res = 1000, compression = 'lzw')
+
 par(mfrow=c(1,2), mar =c(4.5,4.5,4.2, 1))
 #is host fidelity a sampling artificat?
 with(host_fidelity,plot(log10(sample_size),sum_n*100, xlab = expression("Log"[10]*"(Sample size)"), ylab = "% of visits to host plants", 
                         cex.lab=cex_lab, cex = 1.2, cex.axis = cex_axis, pch = 16, col = adjustcolor('cadetblue',.5)))
+abline(coefs[1],coefs[2],lty=2)
+text(3.3,10, paste0('r = ', round_pearson), cex =1.6)
+
 with(hosts_by_sex_bigN,stripchart(sum_n*100~sex,
                                   vertical=T,col=point_col,at=c(loc_gen,loc_spec),pch=16,
                                   cex.lab = cex_lab, cex.axis=cex_axis,
@@ -259,7 +278,7 @@ with(hosts_by_sex_bigN,stripchart(sum_n*100~sex,
 for(i in 1:nrow(sexed_wide)){segments(loc_gen, sexed_wide$female[i]*100, loc_spec, sexed_wide$male[i]*100,lty=2,col=adjustcolor('black',.3))}
 with(hosts_by_sex_bigN,boxplot(sum_n*100~sex,col=box_col,add=T,at=c(loc_gen,loc_spec), axes = F,boxwex=c(.35,.35)))
 
- dev.off()
+dev.off()
 
 
 

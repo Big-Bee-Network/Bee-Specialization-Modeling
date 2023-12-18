@@ -39,6 +39,6 @@ View(spec_status %>% filter(ns_rank_rounded =='G1') )
 #how many have no status
 # GNR = not ranked; GU ==unrankable
 unique(spec_status$ns_rank_rounded)
-rank_sums = hosts %>% left_join(natureserve) %>% group_by(ns_rank_rounded) %>% summarize(n=n()) %>%
-  mutate(prop_rank = n/nrow(hosts)*100)
+(rank_sums = hosts %>% left_join(natureserve) %>% group_by(ns_rank_rounded) %>% summarize(n=n()) %>%
+  mutate(prop_rank = n/nrow(hosts)*100))
 31.7+ 55.3 + 0.570

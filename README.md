@@ -1,4 +1,6 @@
 # Predicting Specialist Bee Species
+This repository contains data and code for the manuscript *Pollen specialist bee species are accurately predicted from visitation, occurrence and phylogenetic data*
+
 
 ## Abstract
 

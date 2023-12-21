@@ -1,4 +1,4 @@
-# Predicting Specialist Bee Species
+# Predicting specialist and generalist bee species
 This repository contains data and code for the manuscript *Pollen specialist bee species are accurately predicted from visitation, occurrence and phylogenetic data*.
 
 
@@ -11,7 +11,7 @@ An animal’s diet breadth is a central aspect of its life history. Yet informat
 | File Name  | Description  | 
 | :------------ |:---------------| 
 | AppendixS2_5Dec2023.csv      | List of USA bee species in GloBI dataset, their diet breadth classifications and references. | 
-| globi_speciesLevelFinal-27nov2023.csv     | Aggregated species-level data used to predict specialist and generalist bee species with random forest model.        |   
+| globi_speciesLevelFinal-27nov2023.csv     | Species-level data used to predict specialist and generalist bee species with random forest model.        |   
 | fowler_formatted-30nov2023.csv | List of bee species in our dataset and their pollen host records from Jarrod Fowler's dataset. Used to assess how often specialist bees visit their host plants.        | 
 | russell_formatted-30nov2023.csv | List of bee species in the GloBI dataset and their pollen host records from Avery's Russell's dataset. Used to assess how often specialist bees visit their host plants.        | 
 | globi_allNamesUpdated.csv | GloBI dataset with interaction records of bee species from the contiguous United States. Both plant and bee names are updated to the currently accepted species name.  | 

@@ -70,9 +70,14 @@ capitalize = function(a_string){
 ```
 
 
+
+
 ## Remove plants not id'd to at least genus level, and bees that are not id'd to species
 ## Change old family names for Asteraceae, Lamiaceae and Apiaceae
 ```{r}
+#some of these are not vascular plants or not id'd to genus (e.g Heliantheae)
+rm_me = c("Coleoptera","White","Picconiella","Heliantheae","Eupatorieae","Eremocarpus") #Eremocarpus is now split into 3 different genera
+
 #reformat the interactions data:
 interactions_reformat = interactions_b %>% 
   mutate(scientificName = capitalize(sourceTaxonSpeciesName), 
@@ -85,7 +90,10 @@ interactions_reformat = interactions_b %>%
   filter(sourceTaxonRank %in% c("subspecies",'variety','species')) %>%
   mutate(plant_family = ifelse(plant_family=='Compositae','Asteraceae',plant_family)) %>%
   mutate(plant_family = ifelse(plant_family=='Umbelliferae','Apiaceae',plant_family)) %>%
-  mutate(plant_family = ifelse(plant_family=='Labiatae','Lamiaceae',plant_family)) 
+  mutate(plant_family = ifelse(plant_family=='Labiatae','Lamiaceae',plant_family)) %>% filter(!plant_species %in% rm_me)
+
+
+
 ```
 
 

@@ -8,9 +8,12 @@ library('picante')
 # devtools::install_github("jinyizju/U.PhyloMaker")
 library("U.PhyloMaker")
 
-#### Read in phylogenetic tree
-# mytree <- read.tree("modeling_data/12862_2013_2375_MOESM1_ESM.txt",comment.char = "#", keep.multi = TRUE, tree.names=c("treeA","treeB","treeC","treeD","treeE","treeF","treeG","treeH","treeI","treeJ"))
+#### Read in genus phylogenetic tree from Hedtke, S.M., Patiny, S. & Danforth, B.N. The bee tree of life: a supermatrix approach to apoid phylogeny and biogeography. BMC Evol Biol 13, 138 (2013). https://doi.org/10.1186/1471-2148-13-138
+
 mytree <- read.tree('modeling_data/12862_2013_2375_MOESM3_ESM.txt')
+
+#below would read in species level tree. Not used in this analysis
+#mytree <- read.tree("modeling_data/12862_2013_2375_MOESM1_ESM.txt",comment.char = "#", keep.multi = TRUE, tree.names=c("treeA","treeB","treeC","treeD","treeE","treeF","treeG","treeH","treeI","treeJ"))
 
 ### read in the globi bee data
 globi = read_csv("modeling_data/globi_allNamesUpdated.csv") %>%
@@ -19,7 +22,7 @@ globi_genera = unique(globi$bee_genus)
 globi_species2 = unique(globi$scientificName)
 globi_species =sub(" ","_",globi_species2)
 
-# abritrarily picked the a tree from the list of 10 to work with
+# arbitrarily picked the a tree from the list of 10 to work with
 which_index = 1
 bee_tree <- mytree[[which_index]] 
 
@@ -37,10 +40,11 @@ pruned_tree = drop.tip(workingtree, drop_me)
 
 
 # add genera not in Hedtke
-(genera_out = globi_genera[!globi_genera %in% workingtree$tip.label])#look at them
+(genera_out = globi_genera[!globi_genera %in% workingtree$tip.label])#look at them (Ancylandrena,Mesoxaea,Gaesischia,Simanthedon,Syntrichalonia,Brachymelecta,Cemolobus,Micralictoides,Pseudaugochlora,Lithurgopsis)
 species_list = globi_genera
 genus_list = data.frame(globi %>%
   distinct(bee_genus,bee_family) %>% select(bee_genus,bee_family) %>% rename(genus = bee_genus,family = bee_family))
+write.table(genera_out,"genera_not_in_original_tree.txt")
 
 #add them using megatree approach in U.PhyloMaker
 result <- phylo.maker(species_list , pruned_tree, genus_list, scenario=2)
@@ -53,8 +57,6 @@ all_gen = new_bee_tree$tip.label
 (rm_genera = all_gen[!all_gen %in% keep])
 very_pruned = drop.tip(new_bee_tree,rm_genera)
 plot(very_pruned)
-
-
 
 phylo_dist = cophenetic.phylo(new_bee_tree)
 #plot phylogenetic distance between the bees

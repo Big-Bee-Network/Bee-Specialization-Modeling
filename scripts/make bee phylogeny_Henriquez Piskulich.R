@@ -8,39 +8,39 @@ library('picante')
 # devtools::install_github("jinyizju/U.PhyloMaker")
 library("U.PhyloMaker")
 
-#### Read in genus phylogenetic tree from Hedtke, S.M., Patiny, S. & Danforth, B.N. The bee tree of life: a supermatrix approach to apoid phylogeny and biogeography. BMC Evol Biol 13, 138 (2013). https://doi.org/10.1186/1471-2148-13-138
+#### Read in genus phylogenetic tree from Henriquez Piskulich, Patricia Andrea; Hugall, Andrew F.; Stuart-Fox, Devi (2023). A supermatrix phylogeny of the world’s bees (Hymenoptera: Anthophila) [Dataset]. Dryad. https://doi.org/10.5061/dryad.80gb5mkw1
 
-mytree <- read.tree('modeling_data/12862_2013_2375_MOESM3_ESM.txt')
-
-#below would read in species level tree. Not used in this analysis
-#mytree <- read.tree("modeling_data/12862_2013_2375_MOESM1_ESM.txt",comment.char = "#", keep.multi = TRUE, tree.names=c("treeA","treeB","treeC","treeD","treeE","treeF","treeG","treeH","treeI","treeJ"))
+mytree <- read.tree('modeling_data/BEE_mat7gen_p8pmAa_fst.nwk')
 
 ### read in the globi bee data
 globi = read_csv("modeling_data/globi_allNamesUpdated.csv") %>%
   mutate(bee_genus = sub(" .*","",scientificName))
 globi_genera = unique(globi$bee_genus)
-globi_species2 = unique(globi$scientificName)
-globi_species =sub(" ","_",globi_species2)
 
-# arbitrarily picked the a tree from the list of 10 to work with
-which_index = 1
-bee_tree <- mytree[[which_index]] 
 
-###root with apoid wasp outgroup
-workingtree=root(bee_tree,outgroup="Tachysphex")
-workingtree=as.phylo(workingtree)
-# 
+workingtree=as.phylo(mytree)
+
 ##Make ultrametric
 workingtree=chronos(workingtree)
-# is.ultrametric(bee_tree)
 
-#remove bee genera that are not in globi
-drop_me = bee_tree$tip.label[!bee_tree$tip.label %in% globi_genera]
-pruned_tree = drop.tip(workingtree, drop_me)
+# Extract tip labels from the tree
+tree_tips <- workingtree$tip.label
+
+# Extract the genus from the tip labels
+# Assuming the format is "genus_species~~family~~subfamily~tribe"
+genus_names <- sub("_.*", "", tree_tips)
+
+# Find the intersection of the extracted genus names and your list of names
+matching_names <- tree_tips[!genus_names %in% globi_genera]
+
+# Trim the tree to include only the matching names
+trimmed_tree <- drop.tip(workingtree, matching_names)
+
+trimmed_tree$tip.label
 
 
-# add genera not in Hedtke
-(genera_out = globi_genera[!globi_genera %in% workingtree$tip.label])#look at them (Ancylandrena,Mesoxaea,Gaesischia,Simanthedon,Syntrichalonia,Brachymelecta,Cemolobus,Micralictoides,Pseudaugochlora,Lithurgopsis)
+# add genera not in Henriquez Piskulich
+(genera_out = globi_genera[!globi_genera %in% genus_names])#look at them (Ancylandrena,Mesoxaea,Gaesischia,Simanthedon,Syntrichalonia,Brachymelecta,Cemolobus,Micralictoides,Pseudaugochlora,Lithurgopsis)
 species_list = globi_genera
 genus_list = data.frame(globi %>%
   distinct(bee_genus,bee_family) %>% select(bee_genus,bee_family) %>% rename(genus = bee_genus,family = bee_family))
@@ -50,6 +50,7 @@ write.table(genera_out,"genera_not_in_original_tree.txt")
 result <- phylo.maker(species_list , pruned_tree, genus_list, scenario=2)
 new_bee_tree = result$phylo
 is.ultrametric(new_bee_tree)
+plot(new_bee_tree, cex = .7)
 
 #double check tree looks okay for a few genera in each fam
 keep = c("Osmia","Hesperapis", 'Bombus',"Andrena","Perdita",'Colletes','Megachile','Lasioglossum')
@@ -92,4 +93,16 @@ plot(very_pruned)
 phylo_df %>% filter(bee_genus=="Bombus") %>% select(bee_genus,"Hesperapis",'Colletes','Megachile','Lasioglossum')
 phylo_df %>% filter(bee_genus=="Hesperapis") %>% select(bee_genus,"Andrena","Perdita",'Colletes','Megachile','Lasioglossum')
 
-# write_csv(bee_fam2 %>% select(bee_genus,everything()) %>% select(-bee),'modeling_data/bee_phylogenetic_data.csv')
+# write_csv(bee_fam2 %>% select(bee_genus,everything()),'modeling_data/bee_phylogenetic_data.csv')
+
+
+#run mantel test to see differences between output
+library(vegan)
+pruned = read_csv("specialist-manuscript-response/bee_phylogenetic_data-pruned.csv")
+nonpruned = read_csv("specialist-manuscript-response/bee_phylogenetic_data-notpruned.csv")
+
+matrix_pruned = select(pruned, -bee_genus, -scientificName, -eigen1, -eigen2, -bee_family)
+matrix_nonpruned = select(nonpruned, -bee_genus, -scientificName, -eigen1, -eigen2, -bee_family)
+
+correlation <- cor(matrix_pruned, matrix_nonpruned, method = "kendall")
+print(correlation)

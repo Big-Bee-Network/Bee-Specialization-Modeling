@@ -77,11 +77,11 @@ phylo_df = as.data.frame(phylo_dist)
 phylo_df$bee_genus = row.names(phylo_dist)
 row.names(phylo_df) <- NULL
 
-bee_fam2 = globi %>% distinct(scientificName,bee_genus) %>%
-  left_join(bee_fam %>% left_join(phylo_df))
-color_pal=RColorBrewer::brewer.pal(8,'Set3')[c(1,3:8)]
-my_cols = adjustcolor(color_pal[as.factor(bee_fam$bee_family)],.4)
-my_cols2 = adjustcolor(color_pal[as.factor(bee_fam$bee_family)],.7)
+# bee_fam2 = globi %>% distinct(scientificName,bee_genus) %>%
+#   left_join(bee_fam %>% left_join(phylo_df))
+# color_pal=RColorBrewer::brewer.pal(8,'Set3')[c(1,3:8)]
+# my_cols = adjustcolor(color_pal[as.factor(bee_fam$bee_family)],.4)
+# my_cols2 = adjustcolor(color_pal[as.factor(bee_fam$bee_family)],.7)
 
 with(bee_fam,plot(eigen1,eigen2,pch=16,col = my_cols))
 legend("bottomleft",unique(bee_fam$bee_family),col=unique(my_cols2),pch=16)

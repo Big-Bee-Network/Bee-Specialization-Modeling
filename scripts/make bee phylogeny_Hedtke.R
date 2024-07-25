@@ -16,7 +16,7 @@ mytree <- read.tree('modeling_data/12862_2013_2375_MOESM3_ESM.txt')
 #mytree <- read.tree("modeling_data/12862_2013_2375_MOESM1_ESM.txt",comment.char = "#", keep.multi = TRUE, tree.names=c("treeA","treeB","treeC","treeD","treeE","treeF","treeG","treeH","treeI","treeJ"))
 
 ### read in the globi bee data
-globi = read_csv("modeling_data/globi_allNamesUpdated.csv") %>%
+globi = read_csv("modeling_data/globi_speciesLevelFinal-27nov2023.csv") %>%
   mutate(bee_genus = sub(" .*","",scientificName))
 globi_genera = unique(globi$bee_genus)
 globi_species2 = unique(globi$scientificName)
@@ -28,11 +28,17 @@ bee_tree <- mytree[[which_index]]
 
 ###root with apoid wasp outgroup
 workingtree=root(bee_tree,outgroup="Tachysphex")
-workingtree=as.phylo(workingtree)
-# 
+#workingtree=as.phylo(workingtree)
+
 ##Make ultrametric
-workingtree=chronos(workingtree)
-# is.ultrametric(bee_tree)
+workingtree=chronos(workingtree, lambda = 0.001, control = chronos.control(maxit = 10000000, eval.max = 100000000))
+is.ultrametric(workingtree)
+
+#test lambda scores impact on tree
+# workingtree=chronos(bee_tree)
+# is.ultrametric(workingtree)
+# phylo_dist_test = cophenetic(workingtree,control = list(maxit = 1000, tol = 1e-6))
+# write.csv(phylo_dist_test,"test/bee_phylogenetic_data-Hedtke_lambda001.csv")
 
 #remove bee genera that are not in globi
 drop_me = bee_tree$tip.label[!bee_tree$tip.label %in% globi_genera]
@@ -44,24 +50,36 @@ pruned_tree = drop.tip(workingtree, drop_me)
 species_list = globi_genera
 genus_list = data.frame(globi %>%
   distinct(bee_genus,bee_family) %>% select(bee_genus,bee_family) %>% rename(genus = bee_genus,family = bee_family))
-write.table(genera_out,"genera_not_in_original_tree.txt")
 
 #add them using megatree approach in U.PhyloMaker
-result <- phylo.maker(species_list , pruned_tree, genus_list, scenario=2)
+result <- phylo.maker(species_list , pruned_tree, genus_list, scenario=3)
 new_bee_tree = result$phylo
 is.ultrametric(new_bee_tree)
-plot(new_bee_tree, cex = .7)
+new_bee_tree$tip.label
+
+plot.phylo(new_bee_tree, cex = .5, main="Hedtke t2 s3")
+write.tree(new_bee_tree, file="modified_tree_Hedtke.nwk")
 
 #double check tree looks okay for a few genera in each fam
-keep = c("Osmia","Hesperapis", 'Bombus',"Andrena","Perdita",'Colletes','Megachile','Lasioglossum')
+keep = c("Osmia","Hesperapis", 'Bombus',"Andrena","Melitta","Perdita",'Colletes','Megachile','Lasioglossum')
 all_gen = new_bee_tree$tip.label
-(rm_genera = all_gen[!all_gen %in% keep])
+#(rm_genera = all_gen[!all_gen %in% keep])
+rm_genera = new_bee_tree$tip.label[!new_bee_tree$tip.label %in% keep]
 very_pruned = drop.tip(new_bee_tree,rm_genera)
-plot(very_pruned)
+plot.phylo(very_pruned, cex = .7, main="Hedtke t2 s3")
+
 
 phylo_dist = cophenetic.phylo(new_bee_tree)
 #plot phylogenetic distance between the bees
 # phylo_dist = cophenetic(pruned_tree)
+
+# Print the distance matrix with high precision
+print(phylo_dist, digits = 10)
+
+# Check for repeated distances
+unique_distances <- unique(as.vector(phylo_dist))
+print(unique_distances)
+
 my_pcoa <- stats:::cmdscale(phylo_dist,eig=T)
 plot(my_pcoa$points) # looks pretty weird
 
@@ -77,11 +95,11 @@ phylo_df = as.data.frame(phylo_dist)
 phylo_df$bee_genus = row.names(phylo_dist)
 row.names(phylo_df) <- NULL
 
-# bee_fam2 = globi %>% distinct(scientificName,bee_genus) %>%
-#   left_join(bee_fam %>% left_join(phylo_df))
-# color_pal=RColorBrewer::brewer.pal(8,'Set3')[c(1,3:8)]
-# my_cols = adjustcolor(color_pal[as.factor(bee_fam$bee_family)],.4)
-# my_cols2 = adjustcolor(color_pal[as.factor(bee_fam$bee_family)],.7)
+ bee_fam2 = globi %>% distinct(scientificName,bee_genus) %>%
+   left_join(bee_fam %>% left_join(phylo_df))
+ color_pal=RColorBrewer::brewer.pal(8,'Set3')[c(1,3:8)]
+ my_cols = adjustcolor(color_pal[as.factor(bee_fam$bee_family)],.4)
+ my_cols2 = adjustcolor(color_pal[as.factor(bee_fam$bee_family)],.7)
 
 with(bee_fam,plot(eigen1,eigen2,pch=16,col = my_cols))
 legend("bottomleft",unique(bee_fam$bee_family),col=unique(my_cols2),pch=16)
@@ -93,4 +111,4 @@ plot(very_pruned)
 phylo_df %>% filter(bee_genus=="Bombus") %>% select(bee_genus,"Hesperapis",'Colletes','Megachile','Lasioglossum')
 phylo_df %>% filter(bee_genus=="Hesperapis") %>% select(bee_genus,"Andrena","Perdita",'Colletes','Megachile','Lasioglossum')
 
-# write_csv(bee_fam2 %>% select(bee_genus,everything()),'modeling_data/bee_phylogenetic_data.csv')
+# write_csv(bee_fam2 %>% select(bee_genus,everything()),'modeling_data/bee_phylogenetic_data-Hedtke-t2-s3.csv')

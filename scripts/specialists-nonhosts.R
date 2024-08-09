@@ -10,6 +10,9 @@ library(vroom)
 globi = vroom("modeling_data/globi_allNamesUpdated.csv") %>%
   mutate(bee_genus = sub(' .*',"",scientificName))
 
+
+
+
 # load the host data
 fowler_formatted = read_csv('modeling_data/fowler_formatted-30nov2023.csv') %>% 
   mutate(ref='fowler')
@@ -22,7 +25,13 @@ hosts = fowler_formatted %>% bind_rows(russell_formatted)
 
 ## both data.frames just contain specialitss. filter th globi data to be just that
 globi_u=globi %>% filter(scientificName %in% hosts$scientificName)
+globi_u %>% filter(scientificName=="Perdita zebrata")
 
+#load data with discrepancies between fowler and wfo:
+discrepancies <- read_csv("modeling_data/discrepancies_fowler_wfo.csv")
+
+#how to deal with this?
+#if bee species is visiting one of these families in "wfo_family" it gets counted
 
 # for specialist bees, what % visit their host plants?
 # for the globi data: categorize interaction partner as host or non-host
@@ -42,6 +51,15 @@ bigN_bees20=globi_u %>%
   summarize(n=n()) %>% 
   filter(n>=n_threshold)
 
+
+bigN_bees20 %>% filter(scientificName == "Perdita zebrata")
+# View(globi_u %>% filter(scientificName == "Perdita zebrata"))
+# View(globi_u %>% filter(scientificName == "Perdita zebrata"))
+globi_u %>% 
+  filter(scientificName == "Perdita zebrata") %>%
+  group_by(plant_genus) %>%
+  summarize(n=n()) %>% arrange(desc(n))
+
 #get sample sizes:
 n_distinct(bigN_bees20$scientificName)
 sum(bigN_bees20$n)
@@ -56,6 +74,22 @@ globi_specs = globi_summ_NoSizeFilter %>%
   filter(scientificName %in% bigN_bees20$scientificName) 
  # mutate(bee_plant = paste(scientificName,plant_genus))
 
+#combine hosts with discrepancies
+a= hosts %>% filter(scientificName %in% discrepancies$scientificName) %>%
+  split(.$scientificName)
+row = a[[1]]
+
+
+hosts_add = hosts %>% filter(scientificName %in% discrepancies$scientificName) %>%
+  split(.$scientificName) %>% map_dfr(function(row){
+    row2 = row %>% select(-host) %>% 
+      left_join(discrepancies %>% rename(host = wfo_family) %>% 
+                  distinct(scientificName, host))
+    
+    return(row %>% bind_rows(row2))
+    
+  })
+hosts = hosts %>% filter(!scientificName %in% discrepancies$scientificName) %>% bind_rows(hosts_add)
 
 # double check that specialist bees have either family as host rank or genus
 # but not both
@@ -69,11 +103,17 @@ empty_list = c()
 globi_host = globi_specs %>% split(1:nrow(globi_specs)) %>% 
   purrr::map_dfr(function(row){
     
+  
+    
     (host_plant_df = hosts %>% 
        filter(scientificName == row$scientificName[1]))
     
+    
+    
     if(unique(host_plant_df$host_rank) =='genus') visiting_host = row$plant_genus  %in% host_plant_df$host
     if(unique(host_plant_df$host_rank) =='family') visiting_host = row$plant_family %in% host_plant_df$host
+    
+    
 
     return(row %>% mutate(host=visiting_host))
     
@@ -97,14 +137,16 @@ cex_main = 1.5
 #change y-axis to be percentages for histogram:
 h= hist(host_fidelity$sum_n*100, plot= F)
 h$density = h$counts/sum(h$counts)*100
-plot(h,freq=FALSE)
+# plot(h,freq=FALSE)
 
-pdf('figures/histogram_visits_hosts_specialists.pdf')
+# pdf('figures/histogram_visits_hosts_specialists.pdf')
+# tiff('figures/histogram_visits_hosts_specialists-15july2024.tiff', units="in", width=6, height=6, res=500, compression = 'lzw')
+
 par(mfrow=c(1,1), mar=c(5,5,4,1))
 plot(h, freq=F, main='Pollen specialists - visits to host plants', ylab = "% of pollen specialist species",
-     xlab='% of visits to host plants',col=point_col,cex.lab=cex_lab, ylim = c(0,40),
+     xlab='% of visits to known pollen host plants',col=point_col,cex.lab=cex_lab, ylim = c(0,40),
      cex.axis=cex_axis, cex.main = cex_main)
- dev.off()
+# dev.off()
 
 paste0('specialist bees visited their host plants on average ',round(mean(host_fidelity$sum_n*100),2),
        '% of the time (median = ',round(median(host_fidelity$sum_n*100),2),'%)')
@@ -112,20 +154,38 @@ paste0('specialist bees visited their host plants on average ',round(mean(host_f
 #what percentage of bees visit their host plants 100% of the time?
 paste0(round(mean(host_fidelity$sum_n==1)*100,2),'% of specialist bees visit their host plants 100% of the time')
 
+# get summary stats
+summary(host_fidelity$sum_n*100)
+mean(host_fidelity$sum_n<.10);sum(host_fidelity$sum_n<.10)
+
+mean(host_fidelity$sum_n>=.90); sum(host_fidelity$sum_n>=.90)
+
+
+
 #get the bees that are least faithful to their host plants
 host_fidelity %>% arrange(sum_n)
 paste('For',sum(host_fidelity$sum_n==0),'specialist bee species, there were no records of the bee visiting their pollen hosts')
 paste('these bees were:')
 (unfaithful_bees = host_fidelity[host_fidelity$sum_n==0,]$scientificName)
-hosts %>% filter(scientificName %in% unfaithful_bees) %>% 
+hosts %>% 
+  filter(scientificName %in% unfaithful_bees) %>% 
   distinct(scientificName, host,host_rank)
 
 globi_host %>% filter(scientificName == "Perdita zebrata")
 hosts %>% filter(scientificName == 'Perdita zebrata') %>% distinct(host)
 
-hist(host_fidelity$sum_cits*100)
-host_fidelity %>% filter(sum_n<.3)
+#hist(host_fidelity$sum_cits*100)
+need_inspection <- host_fidelity %>% filter(sum_n<.3)
 
+globi_u %>% 
+  filter(scientificName %in% need_inspection$scientificName) %>% 
+  distinct(scientificName, plant_species, plant_genus, plant_family) %>%
+  left_join(hosts %>% select(scientificName, host, host_rank))
+
+# install.packages('remotes')
+# remotes::install_github("barnabywalker/kewr")
+library("kewr")
+search_ipni("Gaillardia")
 
 #is host fidelity a sampling artificat?
 with(host_fidelity,plot(sample_size, sum_n, xlab = "Sample size", ylab = "% of visits to host plants", 
@@ -143,7 +203,7 @@ unfaithful_joined = unfaithful %>% left_join(hosts) %>%
   rename(Bee=scientificName, 'Proportion of visits to host' = sum_n, 
          Host = host, "Host rank" = host_rank, 'Sample size' = sample_size)
 
-# write_xlsx(unfaithful_joined,'modeling_data/unfaithful_pollen_specialists.xlsx')
+# writexl::write_xlsx(unfaithful_joined,'modeling_data/unfaithful_pollen_specialists-18July2024.xlsx')
 
 ## what about male vs female?
 data.frame(globi_u %>% 
@@ -207,7 +267,7 @@ hosts_by_sex1 = globi_host_bySex %>%
 hosts_by_sex = hosts_by_sex1
 
 #first just plot as box plots
-with(hosts_by_sex %>% filter(sex != 'unknown'),boxplot(sum_n~sex))
+# with(hosts_by_sex %>% filter(sex != 'unknown'),boxplot(sum_n~sex))
 
 # then only include bees with pairs of male and female 
 # with sample size above some threshold
@@ -262,11 +322,11 @@ my_lm = with(host_fidelity %>% mutate(logN = log10(sample_size),per = 100*sum_n)
 round_pearson = round(pearson,2)
 #combine the two post-hoc figs together
 # pdf('figures/host_fidelity_posthoc-1dec2023.pdf', width = 12)
-tiff("figures/host_fidelity_posthoc-1dec2023.tiff", width = 12, height =8, units = 'in', res = 1000, compression = 'lzw')
+tiff("figures/host_fidelity_posthoc-18july2024.tiff", width = 12, height =8, units = 'in', res = 1000, compression = 'lzw')
 
 par(mfrow=c(1,2), mar =c(4.5,4.5,4.2, 1))
 #is host fidelity a sampling artificat?
-with(host_fidelity,plot(log10(sample_size),sum_n*100, xlab = expression("Log"[10]*"(Sample size)"), ylab = "% of visits to host plants", 
+with(host_fidelity,plot(log10(sample_size),sum_n*100, xlab = expression("Log"[10]*"(Sample size)"), ylab = "% of visits to known pollen hosts", 
                         cex.lab=cex_lab, cex = 1.2, cex.axis = cex_axis, pch = 16, col = adjustcolor('cadetblue',.5)))
 abline(coefs[1],coefs[2],lty=2)
 text(3.3,10, paste0('r = ', round_pearson), cex =1.6)
@@ -274,9 +334,9 @@ text(3.3,10, paste0('r = ', round_pearson), cex =1.6)
 with(hosts_by_sex_bigN,stripchart(sum_n*100~sex,
                                   vertical=T,col=point_col,at=c(loc_gen,loc_spec),pch=16,
                                   cex.lab = cex_lab, cex.axis=cex_axis,
-                                  xlab = 'Bee sex',ylab = '% of visits to host plant'))
+                                  xlab = 'Bee sex',ylab = '% of visits to known pollen hosts'))
 for(i in 1:nrow(sexed_wide)){segments(loc_gen, sexed_wide$female[i]*100, loc_spec, sexed_wide$male[i]*100,lty=2,col=adjustcolor('black',.3))}
-with(hosts_by_sex_bigN,boxplot(sum_n*100~sex,col=box_col,add=T,at=c(loc_gen,loc_spec), axes = F,boxwex=c(.35,.35)))
+with(hosts_by_sex_bigN,boxplot(sum_n*100~sex,col=box_col,add=T,at=c(loc_gen,loc_spec),boxlwd=2, border = 'mediumorchid3',axes = F,boxwex=c(.35,.35)))
 
 dev.off()
 

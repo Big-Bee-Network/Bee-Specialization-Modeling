@@ -80,6 +80,7 @@ tpl_formatted2 = tpl_formatted %>%
   mutate(plant_genus = gsub(' .*','',accepted_name)) %>%
   select(-plant_family,-wfo_name) 
 
+
 #add family info from world flora online
 plant_update = tpl_formatted2 %>%
   left_join(wfo_fams,by="plant_genus") %>%
@@ -97,19 +98,20 @@ globi_tpl = globi %>%
   rename(old_pl_name = plant_species,old_pl_fam = plant_family,old_pl_genus = plant_genus) %>%
   left_join(plant_update)
 
+#
 # write_csv(globi_tpl,'modeling_data/globi_allNamesUpdated.csv')
-tree = GBOTB.extended.TPL
-tips.info.WP
+
 #make the plant phylogeny
 #which species are in the mega-tree?
-(sp_in_megatree=plant_update %>% filter(sub(" ","_",plant_species) %in% tips.info.WP$species))
-(gen_in_megatree= plant_update %>% filter(plant_genus %in% tips.info.WP$genus))
+(sp_in_megatree=plant_update %>% filter(sub(" ","_",plant_species) %in% tips.info$species))
+(gen_in_megatree= plant_update %>% filter(plant_genus %in% tips.info$genus))
 
 #write list of genera currently in the megatree
 write_csv(gen_in_megatree,'modeling_data/megatree_genera.csv')
 
+
 #how many genera totally missing from the megatree
-nrow(plant_update %>% filter(!plant_genus %in% tips.info.WP$genus) %>% distinct(plant_genus))
+nrow(plant_update %>% filter(!plant_genus %in% tips.info$genus) %>% distinct(plant_genus))
 nrow(gen_in_megatree %>% distinct(plant_genus))
 nrow(plant_update %>% distinct(plant_genus))
 
@@ -117,7 +119,7 @@ nrow(plant_update %>% distinct(plant_genus))
 gen_not_in_megatree<-plant_update %>% filter(!plant_genus %in% tips.info$genus)
 distinct_genera <- unique(gen_not_in_megatree$plant_genus)
 distinct_genera_df <- data.frame(genus = distinct_genera)
-#write_csv(distinct_genera,'modeling_data/megatree_not_genera.csv')
+write_csv(distinct_genera,'modeling_data/megatree_not_genera.csv')
 
 #for genera with our region's species in the megatree, 
 #randomly pick among the species that are in the megatree

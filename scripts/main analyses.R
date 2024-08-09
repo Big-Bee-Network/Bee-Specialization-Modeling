@@ -48,7 +48,7 @@ rename_figure <- function(figure_name){
 }
 
 #what percentage of bee species are missing diet breadth information?
-globi_degree_all <- read_csv("modeling_data/globi_speciesLevelFinal-27nov2023.csv")
+globi_degree_all <- read_csv("modeling_data/globi_speciesLevelFinal-27nov2023_revision.csv")
 mean(is.na(globi_degree_all$diet_breadth_conservative))*100
 
 # what is the phylogenetic breakdown of the unknowns
@@ -60,7 +60,7 @@ unknowns %>%
   ungroup
 
 # globi_degree is with the species-level data
-globi_degree <- read_csv("modeling_data/globi_speciesLevelFinal-27nov2023.csv") %>% 
+globi_degree <- read_csv("modeling_data/globi_speciesLevelFinal-27nov2023_revision.csv") %>% 
   #first we need to define diet-breadth based on liberal or conservative criteria
   mutate(diet_breadth = set_diet_breadth(.)) %>%
   # let's remove the columns we don't care about:
@@ -84,7 +84,7 @@ globi_degree <- globi_degree %>% select(-phylo_dist_rm)
 
 # load the globi data
 # this data file has bee and plant names updated, and only american bees
-globi <- vroom("modeling_data/globi_allNamesUpdated.csv") %>%
+globi <- vroom("modeling_data/globi_allNamesUpdated_Henriquez_Piskulich.csv") %>%
   mutate(bee_genus = sub(" .*", "", scientificName)) %>%
   filter(scientificName %in% globi_degree$scientificName)
 
@@ -114,7 +114,7 @@ globi_broadSources %>%
   left_join(source_key) %>%
   group_by(broaderSource) %>%
   summarize(percent = sum(n) / total_n)
- # write_csv(sources_table, 'sources_table28nov2023.csv')
+ write_csv(sources_table, 'sources_table28nov2023_revision.csv')
 
 
 paste0(
@@ -983,7 +983,7 @@ dev.off()
 # partial_data = partial(my_rf, pred.var = "phylo_simp")  %>% mutate(model_iteration=i)
 
 
-# how does the spatial model perform without any phylognetic predcitors
+# how does the spatial model perform without any phylogenetic predictors
 colnames(data_space2)
 data_space3 <- data_space2 %>% select(
   scientificName, diet_breadth, phylo_simp, eigen1_plantGenus,

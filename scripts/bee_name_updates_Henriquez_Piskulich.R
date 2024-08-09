@@ -5,7 +5,7 @@ library(tidyverse)
 #(Pseudopanurgus,Peponapis,Tetraloniella,Syntrichalonia,Cemolobus,Micralictoides)
 #Eucerini treated according to https://academic.oup.com/isd/article/7/4/3/7222693?login=true 
 #Pseudopanurgus https://resjournals.onlinelibrary.wiley.com/doi/epdf/10.1111/syen.12530
-#Micralictoides treated as subgenus of Duforea <- not in tree?
+#Micralictoides treated as subgenus of Duforea
 #Dufourea subg. Micralictoides Timberlake, 1939. Ent. Soc. Amer., Ann. 32: 397.
 
 globi_allNamesUpdated <- read_csv("modeling_data/globi_allNamesUpdated.csv")
@@ -28,4 +28,4 @@ globi_allNamesUpdated <- globi_allNamesUpdated %>%
 
 
 #write updated dataframe
-write_csv(globi_allNamesUpdated,'modeling_data/globi_allNamesUpdated_Henriquez_Piskulich.csv')
+#write_csv(globi_allNamesUpdated,'modeling_data/globi_allNamesUpdated_Henriquez_Piskulich.csv')

@@ -2,7 +2,7 @@ rm(list=ls())
 library(tidyverse)
 library(readxl)
 
-bee_phy = read_csv('modeling_data/bee_phylogenetic_data.csv')
+bee_phy = read_csv('modeling_data/bee_phylogenetic_data_Henriquez_Piskulich_tree.csv')
 plant_phy = read_csv("modeling_data/globi_phyloDiv.csv") %>%
   mutate(bee_genus = sub(" .*","",scientificName))
 geo = read_csv('modeling_data/chesshire2023_beeArea-11april2023.csv')
@@ -48,7 +48,7 @@ cuckoos_final <- cuckoos_part1 %>% bind_rows(cuckoos_part2) %>%
 
 
 
-#let's see if any bees listed as specialists are generalists according to avery's
+#let's see if any bees listed as specialists are generalists according to Avery's
 ##check if any 'specialists' have host plants from multiple families
 actually_generalists <- hosts %>%
   filter(scientificName %in% diet_breadth_fowler2$scientificName)%>% 
@@ -135,5 +135,5 @@ data %>% group_by(diet_breadth_conservative) %>% summarize(n=n())
 
 data %>% filter(scientificName %in% c("Andrena geranii","Florilegus condignus"))
 # 
-# write_csv(data,"modeling_data/globi_speciesLevelFinal-27nov2023.csv")
+#write_csv(data,"modeling_data/globi_speciesLevelFinal-27nov2023_revision.csv")
 

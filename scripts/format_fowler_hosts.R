@@ -10,15 +10,15 @@ wfo_fams = read_csv('modeling_data/plant_fam_info.csv')
 # need to remove bee species that are generalists according to Avery's list
 actually_generalists_df = read_csv("modeling_data/actuallyGeneralists_changeFowler.csv")
 
-#load world flora online data for getting accepted species names
-wfo_data = vroom("/Volumes/Seagate/globi_13dec2022/data/WFO_Backbone/classification.txt") %>%
-  mutate(scientificName2 = paste(genus,specificEpithet,infraspecificEpithet)) %>% # add a field with a scientific name for subspecies
-  mutate(scientificName3 = paste(genus,specificEpithet))
-
-# #load world flora online data - from computer instead of seagate
-# wfo_data = vroom("modeling_data/WFO_Backbone/classification.txt") %>%
+# #load world flora online data for getting accepted species names
+# wfo_data = vroom("/Volumes/Seagate/globi_13dec2022/data/WFO_Backbone/classification.txt") %>%
 #   mutate(scientificName2 = paste(genus,specificEpithet,infraspecificEpithet)) %>% # add a field with a scientific name for subspecies
 #   mutate(scientificName3 = paste(genus,specificEpithet))
+
+#load world flora online data - from computer instead of seagate
+wfo_data = vroom("modeling_data/WFO_Backbone/classification.txt") %>%
+  mutate(scientificName2 = paste(genus,specificEpithet,infraspecificEpithet)) %>% # add a field with a scientific name for subspecies
+  mutate(scientificName3 = paste(genus,specificEpithet))
 
 #this genus is not in wfo, and I looked it up manually in catalog of life :
 not_in_wfo = data.frame(fowler = c('Salazaria'),
@@ -47,6 +47,13 @@ generalists_change = c(generalists_fowler, generalists_russell)
 
 #note: some bees on this list are duplicated, if they occur in multiple regions (eg both eastern and central usa)
 fowler <- read_csv("modeling_data/fowler_hostplants.csv") %>%
+  mutate(diet_breadth = ifelse(scientificName %in% generalists_change,'generalist','specialist')) %>%
+  mutate(host_plant_rank = ifelse(grepl('aceae',host_plant) | grepl('ieae',host_plant),'family','genus')) %>%
+  mutate(diet_breadth_detailed = ifelse(host_plant_rank == 'family' & diet_breadth =='specialist','family_specialist','genus_specialist')) %>%
+  mutate(diet_breadth_detailed = ifelse(diet_breadth=='generalist','generalist',diet_breadth_detailed))
+
+#this version edited to get genera from family level specialsits
+fowler2 <- read_csv("modeling_data/fowler_hostplants-edited.csv") %>%
   mutate(diet_breadth = ifelse(scientificName %in% generalists_change,'generalist','specialist')) %>%
   mutate(host_plant_rank = ifelse(grepl('aceae',host_plant) | grepl('ieae',host_plant),'family','genus')) %>%
   mutate(diet_breadth_detailed = ifelse(host_plant_rank == 'family' & diet_breadth =='specialist','family_specialist','genus_specialist')) %>%
@@ -82,6 +89,16 @@ get_host_fowler = fowler %>%
   mutate(new_host = ifelse(new_host =="Cichorieae","Asteraceae",new_host)) %>%
   distinct(scientificName,host_plant,new_host,fam_host) 
 
+# edited version to update genera names for family level specialists
+get_host_fowler2 = fowler2 %>%
+  filter(diet_breadth=='specialist') %>%
+  mutate(fam_host = host_plant_rank=='family')  %>%
+  mutate(new_host = ifelse(fam_host,sub(":.*","",host_plant),host_plant)) %>%
+  mutate(new_host = ifelse(new_host =="Cichorieae","Asteraceae",new_host)) %>%
+  distinct(scientificName,host_plant,new_host,fam_host) 
+
+
+#
 
 #separate family-level specialists from genus-level specialists
 #genus level specialists will require special formatting to get their pollen hosts
@@ -93,6 +110,72 @@ fix_me_df = get_host_fowler %>%
   filter(!scientificName %in% get_host_fowler_fams$scientificName)
 fix_me = unique(fix_me_df$host_plant)
 get_host_fowler %>% filter(scientificName == 'Andrena melanochroa')
+
+
+#
+list_hosts = sub(".*: ","",get_host_fowler_fams$host_plant)
+host_string = list_hosts[[1]]
+a = get_host_fowler %>% distinct(scientificName, host_plant)
+row = a[1,]
+
+#filter get_host_fowler dataset to just be specialists on plant fams
+
+fowler_plant_genera_inFams = get_host_fowler2 %>% 
+  filter(fam_host) %>%
+  distinct(scientificName, host_plant) %>%
+  split(1:nrow(.)) %>%
+  map_dfr(function(row){
+    host_string = row$host_plant
+    family_fowler = sub(":.*","",host_string)
+    list_hosts = sub(".*: ","",host_string)
+    
+    one_bee_hosts = strsplit(list_hosts,', ')[[1]]
+    
+    host_genera = one_bee_hosts %>% map_chr(function(one_host){
+      plant_genus = sub(" .*","", one_host)
+      
+    })
+
+    data.frame(scientificName = row$scientificName, family_fowler = family_fowler,
+               plant_genus = host_genera, host_string = host_string)
+  
+    })
+
+#next need to get families for all plant genera names (using world flora online)
+#and see if [the families are the same one's as in fowler, if they now]
+check_me = fowler_plant_genera_inFams %>%
+  filter(plant_genus %in% c("?", ""," ", "Suh","D.")) %>% distinct(scientificName,host_string)
+fowler_genera_inFams_wfo = fowler_plant_genera_inFams %>% 
+  distinct(plant_genus,family_fowler) %>%
+  filter(plant_genus != "?") %>%
+  left_join(wfo_fams, by = 'plant_genus') %>%
+  rename(wfo_family = "plant_family")
+(discrepancies = fowler_genera_inFams_wfo %>% 
+    filter(!is.na(wfo_family)) %>% 
+    filter(family_fowler != wfo_family) %>%
+    filter(family_fowler != "Cichorieae") %>%
+    left_join(fowler_plant_genera_inFams %>% select(scientificName, plant_genus)))
+
+#join with the bee species data
+
+
+#save the discrepancies table as a csv
+write_csv(discrepancies,"modeling_data/discrepancies_fowler_wfo.csv")
+fowler_genera_inFams_wfo %in% filter(plant_genus %in% discrepancies$plant_genus)
+
+fowler_plant_genera_inFams[fowler_plant_genera_inFams$plant_genus %in% discrepancies$plant_genus,] %>% select(-host_string)
+
+# # for genera without fams, these probably weren't in globi [which means I think I don't need to update htem also...]
+# # upload full wfo dataset to get these
+# need_wfo_fam = fowler_genera_inFams_wfo %>%
+#   filter(is.na(plant_family))
+# wfo_data = vroom("modeling_data/WFO_Backbone/classification.txt") %>%
+#     mutate(scientificName2 = paste(genus,specificEpithet,infraspecificEpithet)) %>% # add a field with a scientific name for subspecies
+#     mutate(scientificName3 = paste(genus,specificEpithet))
+# wfo_update = need_wfo_fam %>% left_join(wfo_data%>% rename(plant_genus = "scientificName")) %>%
+#   distinct(genus, family)
+
+
 
 # if there are specialists whose host plants are genus-level in one region but 
 # family-level in another, go with the family-level host plant

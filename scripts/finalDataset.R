@@ -5,14 +5,38 @@ library(readxl)
 bee_phy = read_csv('modeling_data/bee_phylogenetic_data_Henriquez_Piskulich_tree.csv')
 plant_phy = read_csv("modeling_data/globi_phyloDiv.csv") %>%
   mutate(bee_genus = sub(" .*","",scientificName))
-geo = read_csv('modeling_data/chesshire2023_beeArea-11april2023.csv')
+geo = read_csv('modeling_data/chesshire2023_beeArea11april2023_revision.csv')
 (diet_breadth_russell <- read_excel("modeling_data/specialistsGeneralists_needRefs 11-27-2023.xlsx") %>%
   mutate(scientificName =sub("_", " ", scientificName)))
+
+# Perform multiple generic replacements
+replace_species <- function(x) {
+  x <- gsub("Pseudopanurgus", "Protandrena", x)
+  x <- gsub("Peponapis", "Xenoglossa", x)
+  x <- gsub("Tetraloniella", "Xenoglossa", x)
+  x <- gsub("Syntrichalonia", "Xenoglossa", x)
+  x <- gsub("Cemolobus", "Xenoglossa", x)
+  x <- gsub("Micralictoides", "Dufourea", x)
+  return(x) }
+  
+#update Russell dataframe to match Henriquez_Piskulich
+diet_breadth_russell <- diet_breadth_russell %>%
+  mutate_all(~ replace_species(.))
+
+#update Russell dataframe to match Henriquez_Piskulich
+plant_phy <- plant_phy %>%
+  mutate_all(~ replace_species(.))
+  
 
 ## this dataframe is for checking if any of the fowler specialists are generalists
 ## according to russell list
 (diet_breadth_fowler2 <- read_csv('modeling_data/bee_diet_breadth-28june2023.csv') %>%
   mutate(scientificName = ifelse(is.na(scientificName), old_bee_name, scientificName)) )
+
+#update Russell dataframe to match Henriquez_Piskulich
+diet_breadth_fowler2 <- diet_breadth_fowler2 %>%
+  mutate_all(~ replace_species(.))
+
 
 ## this dataframe is for getting unique russell specialists so we can add them 
 ## separately to the final dataset
@@ -22,6 +46,10 @@ diet_breadth_fowler <-diet_breadth_fowler2 %>%
 
 hosts = read_csv("modeling_data/DATA_bee-taxa-known-hosts_all-plant-taxa_11-27-2023.csv") %>%
   mutate(scientificName =sub("_", " ", bee))
+
+#update Russell dataframe to match Henriquez_Piskulich
+hosts <- hosts %>%
+  mutate_all(~ replace_species(.))
 
 
 ##load cuckoo bee data
@@ -33,9 +61,15 @@ more_cuckoos = read_csv("modeling_data/cuckoo_genera1.csv") %>%
   filter(cuckoo=='yes') %>% mutate(diet_breadth ='parasitic') %>%
   rename(bee_genus = genus)
 
+more_cuckoos <- more_cuckoos %>%
+  mutate_all(~ replace_species(.))
+
 #make data.frame with scientificName, bee_genus and parastic as columns
 cuckoos_part1 <- plant_phy %>% select(scientificName) %>%
   left_join(cuckoos) %>% filter(!is.na(diet_breadth)) 
+
+cuckoos_part1 <- cuckoos_part1 %>%
+  mutate_all(~ replace_species(.))
 
 cuckoos_part2 <- plant_phy %>% select(scientificName, bee_genus) %>%
       left_join(more_cuckoos %>% select(bee_genus, diet_breadth)) %>%
@@ -50,28 +84,33 @@ cuckoos_final <- cuckoos_part1 %>% bind_rows(cuckoos_part2) %>%
 
 #let's see if any bees listed as specialists are generalists according to Avery's
 ##check if any 'specialists' have host plants from multiple families
-actually_generalists <- hosts %>%
-  filter(scientificName %in% diet_breadth_fowler2$scientificName)%>% 
-  split(.$scientificName) %>% map(function(df){
-  if(nrow(df) != 1){
-    count_fams = n_distinct(df$family)
-    if(count_fams>1) {
-      my_return = df$scientificName[1]
-     
-      }
-    else{my_return = NULL}
-    
-  }else{
-    my_return = NULL
-  }
-  return(my_return)
-}) %>% unlist(use.names = F)
-
-#save actually_generalists as csv file
-actually_generalists_df <- data.frame(scientificName = actually_generalists, 
-                                      diet_breadth = 'generalist',
-                                      ref = 'russell')
+# actually_generalists <- hosts %>%
+#   filter(scientificName %in% diet_breadth_fowler2$scientificName)%>% 
+#   split(.$scientificName) %>% map(function(df){
+#   if(nrow(df) != 1){
+#     count_fams = n_distinct(df$family)
+#     if(count_fams>1) {
+#       my_return = df$scientificName[1]
+#      
+#       }
+#     else{my_return = NULL}
+#     
+#   }else{
+#     my_return = NULL
+#   }
+#   return(my_return)
+# }) %>% unlist(use.names = F)
+# 
+# #save actually_generalists as csv file
+# actually_generalists_df <- data.frame(scientificName = actually_generalists, 
+#                                       diet_breadth = 'generalist',
+#                                       ref = 'russell')
 # write_csv(actually_generalists_df, 'modeling_data/actuallyGeneralists_changeFowler.csv')
+#read in actually generalists csv file
+actually_generalists_df <- read_csv("modeling_data/actuallyGeneralists_changeFowler.csv")
+
+actually_generalists <- actually_generalists_df %>%
+  mutate_all(~ replace_species(.))
 
 # add cuckoo bees to jarrod fowler data and remove bees that are generalists in 
 # russell dataset
@@ -134,6 +173,15 @@ data %>% filter(is.na(area_m2))
 data %>% group_by(diet_breadth_conservative) %>% summarize(n=n())
 
 data %>% filter(scientificName %in% c("Andrena geranii","Florilegus condignus"))
-# 
-#write_csv(data,"modeling_data/globi_speciesLevelFinal-27nov2023_revision.csv")
+
+data = read_csv('modeling_data/globi_speciesLevelFinal-27nov2023_revision.csv')
+
+remove_last_three_columns <- function(data) {
+  data <- data[, -((ncol(data)-2):ncol(data))]
+  return(data)
+}
+
+trimmed_data <- remove_last_three_columns(data)
+
+write_csv(trimmed_data,"modeling_data/globi_speciesLevelFinal-12Aug2024_revision.csv")
 

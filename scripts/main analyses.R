@@ -15,6 +15,7 @@ library(gridExtra)
 library(pROC)
 library(pROC)
 library(ROCR)
+library(caret)
 library(pdp) # for partial, plotPartial, and grid.arrange functions
 
 
@@ -48,8 +49,9 @@ rename_figure <- function(figure_name){
 }
 
 #what percentage of bee species are missing diet breadth information?
-globi_degree_all <- read_csv("modeling_data/globi_speciesLevelFinal-27nov2023_revision.csv")
+globi_degree_all <- read_csv("final_data/globi_speciesLevelFinal-12Aug2024_revision2.csv")
 mean(is.na(globi_degree_all$diet_breadth_conservative))*100
+#30.10836
 
 # what is the phylogenetic breakdown of the unknowns
 unknowns <-globi_degree_all  %>% filter(is.na(diet_breadth_conservative))
@@ -59,8 +61,15 @@ unknowns %>%
   mutate(per = 100*n/sum(n)) %>%
   ungroup
 
+# Andrenidae      59 15.2  
+# Apidae         102 26.2  
+# Colletidae      28  7.20 
+# Halictidae      74 19.0  
+# Megachilidae   123 31.6  
+# Melittidae       3  0.771
+
 # globi_degree is with the species-level data
-globi_degree <- read_csv("modeling_data/globi_speciesLevelFinal-27nov2023_revision.csv") %>% 
+globi_degree <- read_csv("final_data/globi_speciesLevelFinal-12Aug2024_revision2.csv") %>% 
   #first we need to define diet-breadth based on liberal or conservative criteria
   mutate(diet_breadth = set_diet_breadth(.)) %>%
   # let's remove the columns we don't care about:
@@ -78,8 +87,18 @@ unique(globi_degree$diet_breadth)
 globi_genera <- sub(" .*", "", globi_degree$scientificName)
 genera_cols <- colnames(globi_degree)[19:length(colnames(globi_degree))]
 phylo_dist_rm <- genera_cols[!genera_cols %in% globi_genera]
-n_distinct(globi_genera)
+n_distinct(globi_genera) #58 GLOBI GENERA
 unique(globi_genera)
+# [1] "Agapostemon"    "Ancylandrena"   "Ancyloscelis"   "Andrena"        "Anthidiellum"   "Anthidium"     
+# [7] "Anthophora"     "Anthophorula"   "Ashmeadiella"   "Atoposmia"      "Augochlora"     "Augochlorella" 
+# [13] "Augochloropsis" "Bombus"         "Calliopsis"     "Centris"        "Ceratina"       "Chelostoma"    
+# [19] "Colletes"       "Conanthalictus" "Diadasia"       "Dianthidium"    "Dieunomia"      "Dufourea"      
+# [25] "Eucera"         "Eulonchopria"   "Florilegus"     "Habropoda"      "Halictus"       "Heriades"      
+# [31] "Hesperapis"     "Hoplitis"       "Hylaeus"        "Lasioglossum"   "Lithurgopsis"   "Macropis"      
+# [37] "Macrotera"      "Megachile"      "Megandrena"     "Melissodes"     "Melitoma"       "Melitta"       
+# [43] "Osmia"          "Panurginus"     "Paranthidium"   "Perdita"        "Plebeia"        "Protandrena"   
+# [49] "Protodufourea"  "Protoxaea"      "Ptiloglossa"    "Ptilothrix"     "Sphecodosoma"   "Svastra"       
+# [55] "Trachusa"       "Xenoglossa"     "Xeralictus"     "Xylocopa"   
 globi_degree <- globi_degree %>% select(-phylo_dist_rm)
 
 # load the globi data
@@ -96,6 +115,8 @@ sources_table <- globi %>%
   summarize(n = n()) %>%
   rename(source = sourceCitation)
 nrow(sources_table)
+#40 source citations in globi
+
 globi_broadSources <- globi %>%
   group_by(sourceBasisOfRecordName) %>%
   summarize(n = n())
@@ -114,7 +135,7 @@ globi_broadSources %>%
   left_join(source_key) %>%
   group_by(broaderSource) %>%
   summarize(percent = sum(n) / total_n)
- write_csv(sources_table, 'sources_table28nov2023_revision.csv')
+ write_csv(sources_table, 'sources_table12Aug2024_revision.csv')
 
 
 paste0(
@@ -122,12 +143,15 @@ paste0(
   n_distinct(globi$plant_genus), " plant genera"
 )
 
+#our data has 150,880 records total, with 682 bee species, and 1185 plant genera
+
 
 # how many records of specialists
 spec_globi <- globi_degree %>% filter(diet_breadth == "specialist")
 gen_globi <- globi_degree %>% filter(diet_breadth == "generalist")
 
-# 44,419 were records of pollen specialist bees, from 459 species..
+# 50858 were records of pollen specialist bees, from 477 species
+# 100022 were records of pollen generalist bees, from 205 species
 paste0(sum(spec_globi$n_globi), " were records of pollen specialist bees, from ", nrow(spec_globi), " species")
 paste0(sum(gen_globi$n_globi), " were records of pollen generalist bees, from ", nrow(gen_globi), " species")
 
@@ -141,7 +165,7 @@ head(globi_degree)
 # species_list = globi_degree %>% select(scientificName, bee_family, diet_breadth) %>%
 #   arrange(bee_family, scientificName) %>%
 #   rename('Bee species' = scientificName, Family = bee_family, "Diet breadth" = diet_breadth)
-# # write_xlsx(species_list,'modeling_data/species_list.xlsx')
+# write_xlsx(species_list,'modeling_data/species_list_revision.xlsx')
 
 # let's look at correlations btw predictor variables:
 # subset data to just be predictor variables - that don't include the phylo distance between plant genera
@@ -165,10 +189,26 @@ data.frame(
   var2 = colnames(cor_matrix)[col_is]
 )
 
+# var1          var2
+# 1   n_chesshire    phylo_rich
+# 2 simpson_genus    phylo_rich
+# 3   simpson_fam    phylo_simp
+# 4    phylo_rich   n_chesshire
+# 5    phylo_simp   simpson_fam
+# 6 simpson_genus   simpson_fam
+# 7    phylo_rich simpson_genus
+# 8   simpson_fam simpson_genus
+
 # let's get rid of these
 vars_to_remove <- c("phylo_rich", "simpson_fam")
 
 colnames(predictor_df %>% select(-all_of(vars_to_remove)))
+
+#################################
+#part 1
+#save so can return to this step
+save.image(file = "analysis_before_first_analysis_revision.RData")
+###################################
 
 ## first do baseline analaysis: stratified k-fold cross validation
 colnames(globi_degree)[!colnames(globi_degree) %in% colnames(predictor_df)]
@@ -188,12 +228,32 @@ data_stratified <- data %>%
     df %>% mutate(fold = fold_assignments)
   })
 
-# double check everything looks even
+# double check everything looks even, more specialists than generalists but even between
 data_stratified %>%
   group_by(diet_breadth, fold) %>%
   summarize(n = n())
 
+# diet_breadth  fold     n
+# <fct>        <int> <int>
+# 1 generalist       1    26
+# 2 generalist       2    26
+# 3 generalist       3    26
+# 4 generalist       4    25
+# 5 generalist       5    26
+# 6 generalist       6    26
+# 7 generalist       7    24
+# 8 generalist       8    26
+# 9 specialist       1    60
+# 10 specialist       2    60
+# 11 specialist       3    60
+# 12 specialist       4    58
+# 13 specialist       5    59
+# 14 specialist       6    60
+# 15 specialist       7    60
+# 16 specialist       8    60
+
 # how many bee genera in the dataset?
+#58 genera, 682 rows
 head(data)
 data %>%
   mutate(genus = sub(" .*", "", scientificName)) %>%
@@ -201,8 +261,6 @@ data %>%
 nrow(data)
 nrow(data_stratified)
 
-
-#
 
 # save one fold for testing and train the model on the rest of the data
 # get distribution of accuracy, importance values etc
@@ -225,9 +283,6 @@ rf <- randomForest(diet_breadth ~ ., data = df_train %>% select(-scientificName)
 rf$votes
 i=4
 
-
-
-library(caret)
 
 #
 get_performance <- function(pred, df_test){
@@ -274,7 +329,7 @@ stratified_output_ls <- 1:k_folds %>%
     rf_p_test <- predict(rf, type = "prob", newdata = df_test)[, 2]
     rf_pr_test <- prediction(rf_p_test, df_test$diet_breadth)
     r_auc_test <- performance(rf_pr_test, measure = "auc")@y.values[[1]]
-    r_auc_test # 0.956
+    r_auc_test #0.9375
 
 
   
@@ -303,6 +358,14 @@ generalists_wrong_vec <- unlist(stratified_output$generalists_wrong)
 
 mean(stratified_output$overall_accuracy)
 # let's look at variable importance
+#0.8665354
+
+mean(stratified_output$specialist_accuracy)
+#0.9390853
+
+mean(stratified_output$generalist_accuracy)
+#0.6969712
+
 var_importance <- 1:length(stratified_output_ls) %>% map_dfr(function(i) {
   # select the model from the list
   my_rf <- stratified_output_ls[[i]][[1]]
@@ -334,6 +397,11 @@ with(
   boxplot(MeanDecreaseAccuracy ~ predictor_var)
 )
 
+#################################
+#part 2
+#save so can return to this step
+save.image(file = "analysis_before_phylogenetic_blocking.RData")
+###################################
 
 ######## Next
 # block the data phylogenetically by family
@@ -342,6 +410,21 @@ with(
 globi_degree %>%
   group_by(diet_breadth, bee_family) %>%
   summarize(n = n())
+
+# diet_breadth bee_family       n
+# <fct>        <chr>        <int>
+# 1 generalist   Andrenidae      53
+# 2 generalist   Apidae          52
+# 3 generalist   Colletidae      14
+# 4 generalist   Halictidae      45
+# 5 generalist   Megachilidae    38
+# 6 generalist   Melittidae       3
+# 7 specialist   Andrenidae     219
+# 8 specialist   Apidae          85
+# 9 specialist   Colletidae      32
+# 10 specialist   Halictidae      37
+# 11 specialist   Megachilidae    86
+# 12 specialist   Melittidae      18
 
 #fam sample sizes
 globi_degree %>%
@@ -354,6 +437,21 @@ globi_degree %>%
   mutate(per =  100 *n/sum(n)) %>%
   ungroup()
 
+# bee_family   diet_breadth     n
+# <chr>        <fct>        <int>
+# 1 Andrenidae   generalist      53
+# 2 Andrenidae   specialist     219
+# 3 Apidae       generalist      52
+# 4 Apidae       specialist      85
+# 5 Colletidae   generalist      14
+# 6 Colletidae   specialist      32
+# 7 Halictidae   generalist      45
+# 8 Halictidae   specialist      37
+# 9 Megachilidae generalist      38
+# 10 Megachilidae specialist      86
+# 11 Melittidae   generalist       3
+# 12 Melittidae   specialist      18
+
 per_genus <- globi_degree %>%
   mutate(bee_genus = sub(" .*","",scientificName)) %>%
   group_by(diet_breadth, bee_genus) %>%
@@ -364,8 +462,8 @@ per_genus <- globi_degree %>%
 all_gens = per_genus %>% filter(per ==100 & diet_breadth=='generalist')
 all_specs = per_genus %>% filter(per ==100 & diet_breadth=='specialist')
 n_genera = n_distinct(per_genus$bee_genus)
-nrow(all_specs)/n_genera
-nrow(all_gens)/n_genera
+nrow(all_specs)/n_genera #0.4482759
+nrow(all_gens)/n_genera # 0.2068966
 
 data_phy <- globi_degree %>%
   mutate(bee_family = ifelse(bee_family %in% c("Colletidae", "Melittidae"), "Colletidae_Melittidae", bee_family)) %>%
@@ -375,6 +473,14 @@ data_phy <- globi_degree %>%
 data_phy %>%
   group_by(bee_family) %>%
   summarize(n = n())
+
+# bee_family                n
+# <chr>                 <int>
+# 1 Andrenidae              272
+# 2 Apidae                  137
+# 3 Colletidae_Melittidae    67
+# 4 Halictidae               82
+# 5 Megachilidae            124
 
 phylo_blocked_output_ls <- unique(data_phy$bee_family) %>%
   purrr::map(function(fam) {
@@ -406,7 +512,7 @@ phylo_blocked_output_ls <- unique(data_phy$bee_family) %>%
     rf_p_train <- predict(rf, type = "prob", newdata = df_train)[, 2]
     rf_pr_train <- prediction(rf_p_train, df_train$diet_breadth)
     r_auc_train <- performance(rf_pr_train, measure = "auc")@y.values[[1]]
-    r_auc_train # 0.956
+    r_auc_train # 1
     
     specialists_wrong <- df_test[!df_test$prediction_correct & df_test$diet_breadth == "specialist", ]$scientificName
     generalists_wrong <- df_test[!df_test$prediction_correct & df_test$diet_breadth == "generalist", ]$scientificName
@@ -469,6 +575,11 @@ with(
   boxplot(MeanDecreaseAccuracy ~ predictor_var)
 )
 
+#################################
+#part 3
+#save so can return to this step
+save.image(file = "analysis_before_before_spatial_blocking.RData")
+###################################
 
 ######## Next
 # block the data spatially
@@ -520,6 +631,17 @@ data_space %>%
   mutate(prop_diet_breadth= n_diet/n) %>%
   filter(diet_breadth=='specialist')
 
+# spatial_block diet_breadth n_diet     n prop_diet_breadth
+# <dbl> <fct>         <int> <int>             <dbl>
+# 1             1 specialist       16    38             0.421
+# 2             2 specialist       45    67             0.672
+# 3             3 specialist       62    90             0.689
+# 4             4 specialist       63   148             0.426
+# 5             5 specialist      117   133             0.880
+# 6             6 specialist       87   103             0.845
+# 7             7 specialist       69    80             0.862
+# 8             8 specialist       18    23             0.783
+
 # now run the cross validation
 spatial_blocked_output_ls <- 1:n_distinct(data_space2$spatial_block) %>%
   purrr::map(function(block) {
@@ -569,7 +691,7 @@ with(
     pivot_longer(everything(), names_to = "performance_type", values_to = "estimates"),
   boxplot(estimates ~ performance_type)
 )
-mean(spatial_blocked_output$overall_accuracy)
+mean(spatial_blocked_output$overall_accuracy) # 0.8436593
 
 # get probability of specialists and generalists
 the_probs <- 1:n_distinct(data_phy$bee_family) %>%
@@ -590,15 +712,22 @@ mean_probs <- the_probs %>%
 generalist_probs <- mean_probs %>%
   filter(diet_breadth == "generalist") %>%
   select(scientificName, diet_breadth, prob_generalist) %>%
+  mutate(prob_generalist = round(prob_generalist, digits = 2)) %>%
   arrange(prob_generalist)
 specialist_probs <- mean_probs %>%
   filter(diet_breadth == "specialist") %>%
   select(scientificName, diet_breadth, prob_generalist) %>%
   mutate(prob_specialist = 1-prob_generalist) %>%
+  mutate(prob_specialist = round(prob_specialist, digits = 2)) %>%
   arrange(prob_specialist)  %>% select(-prob_generalist)
 
-# write_csv(specialist_probs, "figures/specialist_probabilities.csv")
-# write_csv(generalist_probs, "figures/generalist_probabilities.csv")
+#write_csv(specialist_probs, "figures/specialist_probabilities_revision.csv")
+#write_csv(generalist_probs, "figures/generalist_probabilities_revision.csv")
+
+#write.table(specialist_probs, file = 'figures/specialist_probabilities_revision.tsv', sep = "\t", row.names = FALSE, col.names = TRUE, quote = FALSE)
+
+#write.table(generalist_probs, file = 'figures/generalist_probabilities_revision.tsv', sep = "\t", row.names = FALSE, col.names = TRUE, quote = FALSE)
+
 
 #
 # let's look at variable importance
@@ -709,9 +838,28 @@ accuracy_sum %>% filter(blocking_method != "random") %>%
   pivot_longer(cols= !'blocking_method', values_to = 'estimate') %>%
   group_by(name) %>% summarize(mean=mean(estimate))
 
+# balanced_accuracy   0.761
+# 2 f1_gens             0.674
+# 3 f1_specs            0.877
+# 4 generalist_accuracy 0.606
+# 5 overall_accuracy    0.840
+# 6 specialist_accuracy 0.916
+# 7 test_auc            0.834
+
 accuracy_sum %>% filter(blocking_method == "phylogenetic") %>%
   pivot_longer(cols= !'blocking_method', values_to = 'estimate') %>%
   group_by(name) %>% summarize(mean=mean(estimate))
+
+# name                 mean
+# <chr>               <dbl>
+# 1 balanced_accuracy   0.783
+# 2 f1_gens             0.708
+# 3 f1_specs            0.875
+# 4 generalist_accuracy 0.652
+# 5 overall_accuracy    0.835
+# 6 specialist_accuracy 0.914
+# 7 test_auc            0.824
+
 accuracy_sum %>% filter(blocking_method == "spatial") %>%
   pivot_longer(cols= !'blocking_method', values_to = 'estimate') %>%
   group_by(name) %>% summarize(mean=mean(estimate))
@@ -722,6 +870,15 @@ accuracy_sum %>%
   group_by(blocking_method, performance_measure) %>%
   summarize(mean = mean(estimate), min = min(estimate), max = max(estimate))
 
+# name                 mean
+# <chr>               <dbl>
+# 1 balanced_accuracy   0.747
+# 2 f1_gens             0.652
+# 3 f1_specs            0.879
+# 4 generalist_accuracy 0.577
+# 5 overall_accuracy    0.844
+# 6 specialist_accuracy 0.918
+# 7 test_auc            0.840
 
 accuracy_long <- accuracy_sum %>%
   dplyr::select(blocking_method, everything()) %>%
@@ -775,9 +932,13 @@ all_var_table <- vars_ranked %>%
   mutate(predictor_factor = as.character(predictor_factor)) %>%
   mutate(predictor_factor = ifelse(is.na(predictor_factor), predictor_var, predictor_factor)) %>%
   dplyr::select(predictor_factor, mean_importance) %>%
+  mutate(mean_importance = round(mean_importance,digits = 2))  %>%
   rename("Predictor variable" = predictor_factor, "Mean importance" = mean_importance)
 
-# write_xlsx(all_var_table,'modeling_data/Importance_predictors-28nov23.xlsx')
+
+#write_xlsx(all_var_table,'figures/Importance_predictors-12Aug24_revision.xlsx')
+#write.table(all_var_table, file = 'figures/Importance_predictors-12Aug24_revision.tsv', sep = "\t", row.names = FALSE, col.names = TRUE, quote = FALSE)
+
 
 # format figure for the paper
 var_top10 <- rename2 %>%
@@ -792,7 +953,7 @@ my_col <- adjustcolor("skyblue4", .6)
 # first add the data points
 cex_axis=1.3
 tiff(rename_figure('figures/var_importance2-main.tiff'), units="in", width=20, height=12, res=1000, compression = 'lzw')
-# pdf(rename_figure("figures/var_importance2-main.pdf"), width = 18)
+#pdf(rename_figure("figures/var_importance2-main_revision.pdf"), width = 18)
 par(cex.lab = 2, mgp = c(5.5, 3.2, 0), mar = c(7, 7.3, 5, 1), mfrow = c(1, 1))
 with(var_top10, stripchart(MeanDecreaseAccuracy ~ predictor_factor, # Data
   method = "jitter", # Random noise
@@ -835,20 +996,24 @@ partial_df <- partial_ls %>% bind_rows()
 head(partial_df)
 # prob for species visiting max phylo diversity of plants
 (max_phylo_pred <- partial_df[which.max(partial_df$phylo_simp), ]$prob_specialist_phylo)
+#0.5601533
+
 # prob for species visiting min phylo diversity of plants
 (min_phylo_pred <- partial_df[which.min(partial_df$phylo_simp), ]$prob_specialist_phylo)
+# 0.7493833
 
 # percent increase
 (min_phylo_pred - max_phylo_pred) / max_phylo_pred
+#0.3378182
 
 ##
 # prob for species visiting max simpson diversity of plants
-(max_simp_pred <- partial_df[which.max(partial_df$simpson_genus), ]$prob_specialist_simp)
+(max_simp_pred <- partial_df[which.max(partial_df$simpson_genus), ]$prob_specialist_simp) #0.5544293
 # prob for species visiting min simpson diversity of plants
-(min_simp_pred <- partial_df[which.min(partial_df$simpson_genus), ]$prob_specialist_simp)
+(min_simp_pred <- partial_df[which.min(partial_df$simpson_genus), ]$prob_specialist_simp) # 0.76107
 
 # percent increase
-(min_simp_pred - max_simp_pred) / max_simp_pred
+(min_simp_pred - max_simp_pred) / max_simp_pred #0.3727089
 
 
 # format data to make histograms
@@ -878,7 +1043,7 @@ hist_df <- densities_df %>%
 my_cols <- RColorBrewer::brewer.pal(length(partial_ls), "Paired")
 my_cols2 <- RColorBrewer::brewer.pal(8, "Set2")[4:8]
 
-# tiff('figures/var_importance.tiff', units="in", width=6, height=6, res=500, compression = 'lzw')
+#tiff('figures/var_importance_revision.tiff', units="in", width=6, height=6, res=500, compression = 'lzw')
 (phylo_simp_graph <- ggplot() +
   geom_segment(
     data = hist_df[hist_df$category_binary == 0, ], size = 4, show.legend = FALSE, colour = my_cols2[1],
@@ -972,7 +1137,7 @@ hist_df_simp <- densities_df_simp %>% mutate(pct = ifelse(category_binary, 1 - p
 
 
 
-# tiff('figures/important_vars.tiff', units="in", width=7, height=14, res=1000, compression = 'lzw')
+#tiff('figures/important_vars.tiff', units="in", width=7, height=14, res=1000, compression = 'lzw')
 pdf(rename_figure("figures/important_vars-main.pdf"), width = 7, height = 10)
 grid.arrange(phylo_simp_graph, simpson_genus_graph)
 dev.off()

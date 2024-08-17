@@ -13,7 +13,6 @@ library(writexl)
 library(furrr)
 library(gridExtra)
 library(pROC)
-library(pROC)
 library(ROCR)
 library(caret)
 library(pdp) # for partial, plotPartial, and grid.arrange functions
@@ -55,6 +54,8 @@ mean(is.na(globi_degree_all$diet_breadth_conservative))*100
 
 # what is the phylogenetic breakdown of the unknowns
 unknowns <-globi_degree_all  %>% filter(is.na(diet_breadth_conservative))
+na_count <- sum(is.na(unknowns$diet_breadth_conservative))
+#389
 unknowns %>% 
   group_by(bee_family) %>%
   summarize(n=n()) %>% 
@@ -87,19 +88,13 @@ unique(globi_degree$diet_breadth)
 globi_genera <- sub(" .*", "", globi_degree$scientificName)
 genera_cols <- colnames(globi_degree)[19:length(colnames(globi_degree))]
 phylo_dist_rm <- genera_cols[!genera_cols %in% globi_genera]
-n_distinct(globi_genera) #58 GLOBI GENERA
+n_distinct(globi_genera) #58 genera
 unique(globi_genera)
-# [1] "Agapostemon"    "Ancylandrena"   "Ancyloscelis"   "Andrena"        "Anthidiellum"   "Anthidium"     
-# [7] "Anthophora"     "Anthophorula"   "Ashmeadiella"   "Atoposmia"      "Augochlora"     "Augochlorella" 
-# [13] "Augochloropsis" "Bombus"         "Calliopsis"     "Centris"        "Ceratina"       "Chelostoma"    
-# [19] "Colletes"       "Conanthalictus" "Diadasia"       "Dianthidium"    "Dieunomia"      "Dufourea"      
-# [25] "Eucera"         "Eulonchopria"   "Florilegus"     "Habropoda"      "Halictus"       "Heriades"      
-# [31] "Hesperapis"     "Hoplitis"       "Hylaeus"        "Lasioglossum"   "Lithurgopsis"   "Macropis"      
-# [37] "Macrotera"      "Megachile"      "Megandrena"     "Melissodes"     "Melitoma"       "Melitta"       
-# [43] "Osmia"          "Panurginus"     "Paranthidium"   "Perdita"        "Plebeia"        "Protandrena"   
-# [49] "Protodufourea"  "Protoxaea"      "Ptiloglossa"    "Ptilothrix"     "Sphecodosoma"   "Svastra"       
-# [55] "Trachusa"       "Xenoglossa"     "Xeralictus"     "Xylocopa"   
+   
 globi_degree <- globi_degree %>% select(-phylo_dist_rm)
+#write_csv(globi_degree,"final_data/globi_speciesLevelFinal-12Aug2024_revision2_genera_removed.csv" )
+# final_data/globi_speciesLevelFinal-12Aug2024_revision2.csv = 1292 species, 91 genera
+# final dataset used in analysis 682 species, 58 genera
 
 # load the globi data
 # this data file has bee and plant names updated, and only american bees
@@ -109,7 +104,7 @@ globi <- vroom("modeling_data/globi_allNamesUpdated_Henriquez_Piskulich.csv") %>
 
 
 #####
-######
+###### how many sources
 sources_table <- globi %>%
   group_by(sourceCitation) %>%
   summarize(n = n()) %>%
@@ -135,8 +130,12 @@ globi_broadSources %>%
   left_join(source_key) %>%
   group_by(broaderSource) %>%
   summarize(percent = sum(n) / total_n)
- write_csv(sources_table, 'sources_table12Aug2024_revision.csv')
+ #write_csv(sources_table, 'sources_table12Aug2024_revision.csv')
 
+# broaderSource      percent
+# 1 field                0.226
+# 2 literature_unknown   0.121
+# 3 museum               0.653
 
 paste0(
   "our data has ", sum(globi_degree$n_globi), " records total, with ", nrow(globi_degree), " bee species, and ",
@@ -177,6 +176,23 @@ predictor_df <- globi_degree %>%
 cor_matrix <- cor(predictor_df)
 heatmap(cor_matrix)
 
+
+# Find correlations greater than 0.7 and less than 1
+indices <- which(cor_matrix > 0.7 & cor_matrix < 1, arr.ind = TRUE)
+
+# Filter out the diagonal elements (correlations of a variable with itself)
+indices <- indices[indices[, 1] != indices[, 2], ]
+
+# Get the names of the correlated variables and the correlation values
+result <- data.frame(
+  Row = rownames(cor_matrix)[indices[, 1]],
+  Column = colnames(cor_matrix)[indices[, 2]],
+  Correlation = cor_matrix[indices]
+)
+
+# Print the result
+print(result)
+
 ## hmm phylogenetic richness is strongly  correlated with several predictors
 cond_matrix <- cor_matrix > .7 & cor_matrix != 1
 strong_cor_i <- which(cond_matrix, arr.ind = T)
@@ -189,15 +205,6 @@ data.frame(
   var2 = colnames(cor_matrix)[col_is]
 )
 
-# var1          var2
-# 1   n_chesshire    phylo_rich
-# 2 simpson_genus    phylo_rich
-# 3   simpson_fam    phylo_simp
-# 4    phylo_rich   n_chesshire
-# 5    phylo_simp   simpson_fam
-# 6 simpson_genus   simpson_fam
-# 7    phylo_rich simpson_genus
-# 8   simpson_fam simpson_genus
 
 # let's get rid of these
 vars_to_remove <- c("phylo_rich", "simpson_fam")
@@ -210,7 +217,7 @@ colnames(predictor_df %>% select(-all_of(vars_to_remove)))
 save.image(file = "analysis_before_first_analysis_revision.RData")
 ###################################
 
-## first do baseline analaysis: stratified k-fold cross validation
+## first do baseline analysis: stratified k-fold cross validation
 colnames(globi_degree)[!colnames(globi_degree) %in% colnames(predictor_df)]
 data <- globi_degree %>%
   select(-c(bee_family, -n_globi)) %>%
@@ -228,10 +235,25 @@ data_stratified <- data %>%
     df %>% mutate(fold = fold_assignments)
   })
 
+globi_degree %>%
+  group_by(diet_breadth) %>%
+  summarize(n = n())
+
+counts <- table(globi_degree$diet_breadth)
+total <- nrow(globi_degree)
+percentages <- (counts / total) * 100
+print(percentages)
+
+# generalist specialist 
+# 30.05865   69.94135
+
+
 # double check everything looks even, more specialists than generalists but even between
 data_stratified %>%
   group_by(diet_breadth, fold) %>%
   summarize(n = n())
+
+total <- nrow(diet_breadth)
 
 # diet_breadth  fold     n
 # <fct>        <int> <int>
@@ -284,7 +306,7 @@ rf$votes
 i=4
 
 
-#
+####
 get_performance <- function(pred, df_test){
   
   predicted <- as.factor(as.vector(pred))
@@ -366,6 +388,9 @@ mean(stratified_output$specialist_accuracy)
 mean(stratified_output$generalist_accuracy)
 #0.6969712
 
+mean(stratified_output$test_auc)
+#0.8982965
+
 var_importance <- 1:length(stratified_output_ls) %>% map_dfr(function(i) {
   # select the model from the list
   my_rf <- stratified_output_ls[[i]][[1]]
@@ -438,7 +463,6 @@ globi_degree %>%
   ungroup()
 
 # bee_family   diet_breadth     n
-# <chr>        <fct>        <int>
 # 1 Andrenidae   generalist      53
 # 2 Andrenidae   specialist     219
 # 3 Apidae       generalist      52
@@ -475,7 +499,6 @@ data_phy %>%
   summarize(n = n())
 
 # bee_family                n
-# <chr>                 <int>
 # 1 Andrenidae              272
 # 2 Apidae                  137
 # 3 Colletidae_Melittidae    67
@@ -559,6 +582,68 @@ var_importance_phy <- 1:length(phylo_blocked_output_ls) %>% map_dfr(function(i) 
 
   return(new_df)
 })
+
+# predictor_var  generalist  specialist MeanDecreaseAccuracy MeanDecreaseGini model_iteration
+# 1         phylo_simp 0.136453154 0.025192008          0.054873056        43.289571               1
+# 2      simpson_genus 0.074620978 0.016106787          0.031378301        28.136291               1
+# 3  eigen1_plantGenus 0.005342069 0.011155714          0.009643602         9.594873               1
+# 4  eigen2_plantGenus 0.044145248 0.019370781          0.025940739        26.237268               1
+# 5    eigen1_plantFam 0.013674775 0.012982311          0.013180789        12.344444               1
+# 6    eigen2_plantFam 0.016887124 0.013704777          0.014622088        12.548884               1
+# 7            med_lat 0.034333138 0.014229476          0.019598351        17.179332               1
+# 8           med_long 0.001270148 0.005350684          0.004250147        10.918293               1
+# 9        n_chesshire 0.055770185 0.018953551          0.028721787        21.673696               1
+# 10           area_ha 0.056866187 0.029449714          0.036545865        27.167438               1
+# 11           med_doy 0.010975740 0.009027945          0.009489134        12.129825               1
+# 12     flight_season 0.019704652 0.003289327          0.007668375        13.195547               1
+# 13        phylo_simp 0.096922613 0.041107461          0.061658677        32.085339               2
+# 14     simpson_genus 0.065210851 0.025993954          0.040155140        25.502534               2
+# 15 eigen1_plantGenus 0.007552540 0.004173066          0.005429318         7.017175               2
+# 16 eigen2_plantGenus 0.028499155 0.039111961          0.035163729        22.898713               2
+# 17   eigen1_plantFam 0.017378020 0.006447816          0.010519416         8.895507               2
+# 18   eigen2_plantFam 0.019575712 0.003316148          0.009474760         9.189769               2
+# 19           med_lat 0.023571818 0.013736216          0.017346241        13.057191               2
+# 20          med_long 0.002619350 0.004009881          0.003470987         9.494514               2
+# 21       n_chesshire 0.020158722 0.032698402          0.027740515        19.556433               2
+# 22           area_ha 0.024815186 0.026529214          0.025797315        17.524801               2
+# 23           med_doy 0.009190931 0.004816207          0.006379295         7.739540               2
+# 24     flight_season 0.037401686 0.020099431          0.026484409        17.791698               2
+# 25        phylo_simp 0.114389929 0.021786179          0.047270971        33.700352               3
+# 26     simpson_genus 0.068303850 0.017166440          0.031494688        26.315026               3
+# 27 eigen1_plantGenus 0.005188484 0.016639259          0.013478227        10.579326               3
+# 28 eigen2_plantGenus 0.034173450 0.014256736          0.019801723        19.729309               3
+# 29   eigen1_plantFam 0.008449909 0.010753309          0.010092326        11.178723               3
+# 30   eigen2_plantFam 0.007919356 0.009350280          0.008905324        10.839655               3
+# 31           med_lat 0.037902614 0.015301195          0.021615525        18.694757               3
+# 32          med_long 0.017744268 0.008429282          0.011026374        14.517595               3
+# 33       n_chesshire 0.054775499 0.015664017          0.026708570        23.720814               3
+# 34           area_ha 0.028975514 0.027693532          0.027987147        22.122669               3
+# 35           med_doy 0.023172697 0.009347039          0.013173695        13.091793               3
+# 36     flight_season 0.025290650 0.007733746          0.012568652        15.535406               3
+# 37        phylo_simp 0.130565763 0.033596114          0.062480468        48.275376               4
+# 38     simpson_genus 0.108053053 0.027886987          0.051638100        33.858817               4
+# 39 eigen1_plantGenus 0.004201640 0.013376222          0.010685752         8.707042               4
+# 40 eigen2_plantGenus 0.028457674 0.019247442          0.021941085        24.805774               4
+# 41   eigen1_plantFam 0.021693532 0.009567073          0.013214189         9.866421               4
+# 42   eigen2_plantFam 0.025489818 0.011591998          0.015709787        12.447822               4
+# 43           med_lat 0.026811687 0.015204077          0.018563341        13.927167               4
+# 44          med_long 0.007943414 0.005925212          0.006481425         9.689435               4
+# 45       n_chesshire 0.080105143 0.017407635          0.036142506        26.620799               4
+# 46           area_ha 0.030350310 0.022461047          0.025054615        19.122767               4
+# 47           med_doy 0.016831457 0.006904366          0.009851175         9.860780               4
+# 48     flight_season 0.042552335 0.010636996          0.020090245        16.738575               4
+# 49        phylo_simp 0.130605575 0.030515823          0.060953745        51.198403               5
+# 50     simpson_genus 0.080914508 0.020412211          0.038851070        34.449446               5
+# 51 eigen1_plantGenus 0.011095807 0.011068770          0.011103777        10.041148               5
+# 52 eigen2_plantGenus 0.039108115 0.025302202          0.029582805        28.340369               5
+# 53   eigen1_plantFam 0.015858467 0.007279215          0.009922112        10.417318               5
+# 54   eigen2_plantFam 0.014686649 0.012213559          0.013016557        13.541817               5
+# 55           med_lat 0.039990641 0.026747924          0.030834115        20.676680               5
+# 56          med_long 0.001116220 0.011422812          0.008286646        11.600896               5
+# 57       n_chesshire 0.067764793 0.023588968          0.037029905        26.258196               5
+# 58           area_ha 0.039995086 0.031345736          0.033949946        23.818583               5
+# 59           med_doy 0.020486045 0.006231085          0.010560754        11.845266               5
+# 60     flight_season 0.036505804 0.005479538          0.014875214        17.752077               5
 
 # get average mean decrease in accuracy and see which variables have highest average
 # then plot variation
@@ -819,6 +904,7 @@ avg_phylo_div=globi_degree %>% group_by(diet_breadth) %>% summarize(phylo_simp =
 phylo_gen = avg_phylo_div[avg_phylo_div$diet_breadth=='generalist',]$phylo_simp
 phylo_spe = avg_phylo_div[avg_phylo_div$diet_breadth=='specialist',]$phylo_simp
 ((phylo_gen-phylo_spe)/phylo_spe)*100
+#15.25613
 # aggregate all accuracy & AUC values from the models
 stratified_sum <- stratified_output %>%
   select(-fold_left_out, -specialists_wrong, -generalists_wrong) %>%
@@ -851,7 +937,6 @@ accuracy_sum %>% filter(blocking_method == "phylogenetic") %>%
   group_by(name) %>% summarize(mean=mean(estimate))
 
 # name                 mean
-# <chr>               <dbl>
 # 1 balanced_accuracy   0.783
 # 2 f1_gens             0.708
 # 3 f1_specs            0.875
@@ -864,21 +949,44 @@ accuracy_sum %>% filter(blocking_method == "spatial") %>%
   pivot_longer(cols= !'blocking_method', values_to = 'estimate') %>%
   group_by(name) %>% summarize(mean=mean(estimate))
 
+# name                 mean
+# 1 balanced_accuracy   0.747
+# 2 f1_gens             0.648
+# 3 f1_specs            0.881
+# 4 generalist_accuracy 0.575
+# 5 overall_accuracy    0.847
+# 6 specialist_accuracy 0.918
+# 7 test_auc            0.837
+
 accuracy_sum %>%
   dplyr::select(blocking_method, everything()) %>%
   pivot_longer(cols = !blocking_method, names_to = "performance_measure", values_to = "estimate") %>%
   group_by(blocking_method, performance_measure) %>%
-  summarize(mean = mean(estimate), min = min(estimate), max = max(estimate))
+  summarize(mean = mean(estimate), min = min(estimate), max = max(estimate)) %>%
+  print(n = 21) 
 
-# name                 mean
-# <chr>               <dbl>
-# 1 balanced_accuracy   0.747
-# 2 f1_gens             0.652
-# 3 f1_specs            0.879
-# 4 generalist_accuracy 0.577
-# 5 overall_accuracy    0.844
-# 6 specialist_accuracy 0.918
-# 7 test_auc            0.840
+# blocking_method performance_measure  mean   min   max
+# 1 phylogenetic    balanced_accuracy   0.785 0.715 0.898
+# 2 phylogenetic    f1_gens             0.711 0.6   0.884
+# 3 phylogenetic    f1_specs            0.876 0.805 0.939
+# 4 phylogenetic    generalist_accuracy 0.656 0.529 0.808
+# 5 phylogenetic    overall_accuracy    0.836 0.758 0.920
+# 6 phylogenetic    specialist_accuracy 0.914 0.826 0.988
+# 7 phylogenetic    test_auc            0.821 0.653 0.971
+# 8 random          balanced_accuracy   0.818 0.785 0.849
+# 9 random          f1_gens             0.759 0.708 0.809
+# 10 random          f1_specs            0.908 0.872 0.928
+# 11 random          generalist_accuracy 0.697 0.625 0.731
+# 12 random          overall_accuracy    0.867 0.824 0.895
+# 13 random          specialist_accuracy 0.939 0.864 0.967
+# 14 random          test_auc            0.898 0.857 0.951
+# 15 spatial         balanced_accuracy   0.747 0.625 0.829
+# 16 spatial         f1_gens             0.648 0.4   0.840
+# 17 spatial         f1_specs            0.881 0.8   0.956
+# 18 spatial         generalist_accuracy 0.575 0.25  0.8
+# 19 spatial         overall_accuracy    0.847 0.783 0.922
+# 20 spatial         specialist_accuracy 0.918 0.855 1
+# 21 spatial         test_auc            0.837 0.722 0.940
 
 accuracy_long <- accuracy_sum %>%
   dplyr::select(blocking_method, everything()) %>%
@@ -936,8 +1044,8 @@ all_var_table <- vars_ranked %>%
   rename("Predictor variable" = predictor_factor, "Mean importance" = mean_importance)
 
 
-#write_xlsx(all_var_table,'figures/Importance_predictors-12Aug24_revision.xlsx')
-#write.table(all_var_table, file = 'figures/Importance_predictors-12Aug24_revision.tsv', sep = "\t", row.names = FALSE, col.names = TRUE, quote = FALSE)
+write_xlsx(all_var_table,'figures/Importance_predictors-12Aug24_revision.xlsx')
+write.table(all_var_table, file = 'figures/Importance_predictors-12Aug24_revision.tsv', sep = "\t", row.names = FALSE, col.names = TRUE, quote = FALSE)
 
 
 # format figure for the paper
@@ -953,7 +1061,7 @@ my_col <- adjustcolor("skyblue4", .6)
 # first add the data points
 cex_axis=1.3
 tiff(rename_figure('figures/var_importance2-main.tiff'), units="in", width=20, height=12, res=1000, compression = 'lzw')
-#pdf(rename_figure("figures/var_importance2-main_revision.pdf"), width = 18)
+pdf(rename_figure("figures/var_importance2-main_revision.pdf"), width = 18)
 par(cex.lab = 2, mgp = c(5.5, 3.2, 0), mar = c(7, 7.3, 5, 1), mfrow = c(1, 1))
 with(var_top10, stripchart(MeanDecreaseAccuracy ~ predictor_factor, # Data
   method = "jitter", # Random noise
@@ -994,26 +1102,39 @@ partial_df <- partial_ls %>% bind_rows()
 
 ## calculate average effect size for phylo_simp and simpson_genus
 head(partial_df)
+
+# phylo_simp prob_specialist_phylo simpson_genus prob_specialist_simp model_iteration
+# 1   390.7025             0.7344800      1.000000            0.7592233               1
+# 2   394.9360             0.8104767      2.202129            0.7754433               1
+# 3   399.1694             0.8128933      3.404259            0.7585667               1
+# 4   403.4028             0.8174700      4.606388            0.7475933               1
+# 5   407.6363             0.8175100      5.808518            0.7390533               1
+# 6   411.8697             0.8158000      7.010647            0.7391500               1
+
 # prob for species visiting max phylo diversity of plants
 (max_phylo_pred <- partial_df[which.max(partial_df$phylo_simp), ]$prob_specialist_phylo)
-#0.5601533
+#0.5584567
 
 # prob for species visiting min phylo diversity of plants
 (min_phylo_pred <- partial_df[which.min(partial_df$phylo_simp), ]$prob_specialist_phylo)
-# 0.7493833
+# 0.73448
 
 # percent increase
 (min_phylo_pred - max_phylo_pred) / max_phylo_pred
-#0.3378182
+#0.315196
 
 ##
 # prob for species visiting max simpson diversity of plants
-(max_simp_pred <- partial_df[which.max(partial_df$simpson_genus), ]$prob_specialist_simp) #0.5544293
+(max_simp_pred <- partial_df[which.max(partial_df$simpson_genus), ]$prob_specialist_simp) 
+#0.5663756
+
 # prob for species visiting min simpson diversity of plants
-(min_simp_pred <- partial_df[which.min(partial_df$simpson_genus), ]$prob_specialist_simp) # 0.76107
+(min_simp_pred <- partial_df[which.min(partial_df$simpson_genus), ]$prob_specialist_simp) 
+#0.7592233
 
 # percent increase
-(min_simp_pred - max_simp_pred) / max_simp_pred #0.3727089
+(min_simp_pred - max_simp_pred) / max_simp_pred
+#0.3404944
 
 
 # format data to make histograms
@@ -1043,7 +1164,7 @@ hist_df <- densities_df %>%
 my_cols <- RColorBrewer::brewer.pal(length(partial_ls), "Paired")
 my_cols2 <- RColorBrewer::brewer.pal(8, "Set2")[4:8]
 
-#tiff('figures/var_importance_revision.tiff', units="in", width=6, height=6, res=500, compression = 'lzw')
+tiff('figures/var_importance_revision.tiff', units="in", width=6, height=6, res=500, compression = 'lzw')
 (phylo_simp_graph <- ggplot() +
   geom_segment(
     data = hist_df[hist_df$category_binary == 0, ], size = 4, show.legend = FALSE, colour = my_cols2[1],
@@ -1129,23 +1250,16 @@ hist_df_simp <- densities_df_simp %>% mutate(pct = ifelse(category_binary, 1 - p
   ) +
   labs(x = "Simpson diversity of plants \nvisited", y = "Probability of being a \nspecialist bee"))
 
-
-# dev.of()
-
-
-
-
+dev.off()
 
 
 #tiff('figures/important_vars.tiff', units="in", width=7, height=14, res=1000, compression = 'lzw')
 pdf(rename_figure("figures/important_vars-main.pdf"), width = 7, height = 10)
 grid.arrange(phylo_simp_graph, simpson_genus_graph)
-dev.off()
 
 
-
-# partialPlot(my_rf, pred.data = df_train, x.var = "phylo_simp")
-# partial_data = partial(my_rf, pred.var = "phylo_simp")  %>% mutate(model_iteration=i)
+#partialPlot(my_rf, pred.data = df_train, x.var = "phylo_simp")
+#partial_data = partial(my_rf, pred.var = "phylo_simp")  %>% mutate(model_iteration=i)
 
 
 # how does the spatial model perform without any phylogenetic predictors
@@ -1204,6 +1318,8 @@ with(
     pivot_longer(everything(), names_to = "performance_type", values_to = "estimates"),
   boxplot(estimates ~ performance_type)
 )
+spatial_blocked_output_np
+
 
 # calculate changes in accuracy with and without phylo predictors
 spatil_np_long <- spatial_blocked_output_np %>%
@@ -1221,6 +1337,28 @@ spatil_np_long %>%
   summarize(mean = mean(estimates)) %>%
   pivot_wider(names_from = phylo_predictors, values_from = mean)
 
+#without phylogenetic predictors
+# performance_type       without with phylo
+# 1 balanced_accuracy   0.752  0.747
+# 2 f1_gens             0.649  0.648
+# 3 f1_specs            0.877  0.881
+# 4 generalist_accuracy 0.582  0.575
+# 5 overall_accuracy    0.841  0.847
+# 6 specialist_accuracy 0.922  0.918
+# 7 test_auc            0.803  0.837
+# 8 train_auc           1     NA   
+
+
+#only phylogenetically blocked
+# name                 mean
+# 1 balanced_accuracy   0.783
+# 2 f1_gens             0.708
+# 3 f1_specs            0.875
+# 4 generalist_accuracy 0.652
+# 5 overall_accuracy    0.835
+# 6 specialist_accuracy 0.914
+# 7 test_auc            0.824
+
 
 ## let's see how our random forest models compare to something simpler
 (all_data_props <- data_space %>%
@@ -1230,13 +1368,21 @@ spatil_np_long %>%
 
 all_data_props %>% arrange(prop_specialists)
 all_data_props %>% arrange(desc(prop_specialists))
-mean(all_data_props$prop_specialists == 1)
-mean(all_data_props$prop_specialists == 0)
+mean(all_data_props$prop_specialists == 1)#0.4482759
+mean(all_data_props$prop_specialists == 0)#0.2068966
 
 #what are the proportions of specialists in each family?
 data_space %>%
   group_by(bee_family) %>%
   summarize(prop_specialists = mean(diet_breadth == "specialist"))
+
+# bee_family   prop_specialists
+# 1 Andrenidae              0.805
+# 2 Apidae                  0.620
+# 3 Colletidae              0.696
+# 4 Halictidae              0.451
+# 5 Megachilidae            0.694
+# 6 Melittidae              0.857
 
 i <- 1
 majority_class_predictions <- unique(data_space$spatial_block) %>%
@@ -1254,6 +1400,7 @@ majority_class_predictions <- unique(data_space$spatial_block) %>%
       group_by(bee_genus) %>%
       summarize(prop_specialists = mean(diet_breadth == "specialist")) %>%
       mutate(majority_class = ifelse(prop_specialists > 0.5, "specialist", "generalist"))
+    
     family_majority <- df_train %>%
       group_by(bee_family) %>%
       summarize(prop_specialists = mean(diet_breadth == "specialist")) %>%
@@ -1292,9 +1439,14 @@ majority_class_predictions <- unique(data_space$spatial_block) %>%
     ) %>% mutate(balanced_accuracy = mean(c(specialist_accuracy, generalist_accuracy)))
   })
 apply(majority_class_predictions, 2, mean)
+
+#majority class predictions, our niave approach for comparison.
+# testing_block    overall_accuracy specialist_accuracy generalist_accuracy 
+# 4.5000000           0.7875089           0.9348012           0.3842401 
+# balanced_accuracy 
+# 0.6595206 
 mean(majority_class_predictions$overall_accuracy)
-
-
+#0.7875089
 
 
 # plot accuracy with majority class model added
@@ -1313,7 +1465,6 @@ all_accuracy <- accuracy_long %>%
   mutate(blocking_model = paste(blocking_method, model, sep = "_")) %>% filter(!performance_measure %in% c('overall_accuracy', 'f1_specs', 'f1_gens'))
 blocking_cols2 <- c("#FFFFB380", "#BEBADA80", "#FB807280", "#FB807280")
 
-
 #
 #how does the simple phylogenetic model compare in performance to 
 #the other models?
@@ -1322,6 +1473,23 @@ all_accuracy %>%
   dplyr::select(-blocking_method,-model) %>%
   group_by(blocking_model, performance_measure) %>%
   summarize(mean = mean(estimate),min=min(estimate), max=max(estimate))
+
+# blocking_model             performance_measure  mean    min   max
+# 1 phylogenetic_random forest AUC                 0.821 0.653  0.971
+# 2 phylogenetic_random forest balanced_accuracy   0.785 0.715  0.898
+# 3 phylogenetic_random forest generalist_accuracy 0.656 0.529  0.808
+# 4 phylogenetic_random forest specialist_accuracy 0.914 0.826  0.988
+# 5 random_random forest       AUC                 0.898 0.857  0.951
+# 6 random_random forest       balanced_accuracy   0.818 0.785  0.849
+# 7 random_random forest       generalist_accuracy 0.697 0.625  0.731
+# 8 random_random forest       specialist_accuracy 0.939 0.864  0.967
+# 9 spatial_majority class     balanced_accuracy   0.660 0.545  0.778
+# 10 spatial_majority class     generalist_accuracy 0.384 0.0909 0.682
+# 11 spatial_majority class     specialist_accuracy 0.935 0.875  1    
+# 12 spatial_random forest      AUC                 0.837 0.722  0.940
+# 13 spatial_random forest      balanced_accuracy   0.747 0.625  0.829
+# 14 spatial_random forest      generalist_accuracy 0.575 0.25   0.8  
+# 15 spatial_random forest      specialist_accuracy 0.918 0.855  1    
  
 # code for double checking things are in the right order in the figs
 par(mfrow = c(1, 1))
@@ -1347,8 +1515,8 @@ with(focal_df, boxplot(estimate ~ blocking_model,
 ylim_vec = c(min(all_accuracy$estimate)-.07, 1)
 axis_pos = 0.3
 
-# pdf(rename_figure("figures/accuracy_estimates_supp.pdf"), width = 9)
-tiff(rename_figure("figures/accuracy_estimates_supp.tiff"), width = 8, height =8, units = 'in', res = 1000, compression = 'lzw')
+#pdf(rename_figure("figures/accuracy_estimates_supp.pdf"), width = 9)
+#tiff(rename_figure("figures/accuracy_estimates_supp.tiff"), width = 8, height =8, units = 'in', res = 1000, compression = 'lzw')
 
 par(mfrow = c(2, 2), mar = c(4.2, 4.2, 5, 1), cex.lab = 1.5)
 cex_lab2 <- 1.8
@@ -1409,7 +1577,7 @@ for (i in 1:n_distinct(all_accuracy$performance_measure)) {
     ))
   }
 }
-dev.off()
+#dev.off()
 
 most_accuracy <- all_accuracy %>% filter(blocking_method != c("random"))
 
@@ -1427,12 +1595,12 @@ with(focal_df, boxplot(estimate ~ blocking_model,
   ylab = my_ylab, main = title, cex.main = 1.8
 ))
 
-# tiff(rename_figure('figures/var_importance2-main.tiff'), units="in", width=20, height=12, res=1000, compression = 'lzw')
+#tiff(rename_figure('figures/var_importance2-main.tiff'), units="in", width=20, height=12, res=1000, compression = 'lzw')
 
 
 
 # pdf(rename_figure("figures/accuracy_estimates_main.pdf"), width = 8)
-tiff(rename_figure("figures/accuracy_estimates_main.tiff"), width = 8, height =8, units = 'in', res = 1000, compression = 'lzw')
+png(rename_figure("figures/accuracy_estimates_main.tiff"), width = 8, height =8, units = 'in', res = 1000)
 par(mfrow = c(2, 2), mar = c(4.2, 4.2, 5, 2), cex.lab = 1.5)
 cex_lab2 <- 1.8
 for (i in 1:n_distinct(most_accuracy$performance_measure)) {
@@ -1496,3 +1664,5 @@ for (i in 1:n_distinct(most_accuracy$performance_measure)) {
   }
 }
 dev.off()
+
+

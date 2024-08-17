@@ -7,16 +7,16 @@ library(vroom)
 
 # load the globi data
 # this data file has bee and plant names updated, and only american bees
-globi = vroom("modeling_data/globi_allNamesUpdated.csv") %>%
+globi = vroom("modeling_data/globi_allNamesUpdated_Henriquez_Piskulich.csv") %>%
   mutate(bee_genus = sub(' .*',"",scientificName))
 
 
 
 
 # load the host data
-fowler_formatted = read_csv('modeling_data/fowler_formatted-30nov2023.csv') %>% 
+fowler_formatted = read_csv('modeling_data/fowler_formatted-15Aug2024.csv') %>% 
   mutate(ref='fowler')
-russell_formatted = read_csv('modeling_data/russell_formatted-30nov2023.csv')%>% 
+russell_formatted = read_csv('modeling_data/russell_formatted-15Aug2024.csv')%>% 
   mutate(ref='russell')
 hosts = fowler_formatted %>% bind_rows(russell_formatted)
 

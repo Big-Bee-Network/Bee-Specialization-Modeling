@@ -19,7 +19,7 @@ In [final_data](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/t
 
 ## General workflow for running the analyses:
 
-1. Download full GloBI interaction dataset from [Zenodo](https://zenodo.org/record/7348355#.Y5owy-zMIcQ).
+1. Download full GloBI interaction dataset from [Zenodo](https://doi.org/10.5281/zenodo.7348355).
 2. Filter the dataset to just include bee data using [scripts/format_bee_data.sh](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/format_bee_data.sh)
 
    a. Output: *all_bee_data.tsv*
@@ -58,13 +58,15 @@ In [final_data](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/t
 
 10. Make final dataset using [scripts/finalDataset.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/finalDataset.R)
 
-    a. Output: [globi_speciesLevelFinal-27nov2023.csv](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/modeling_data/globi_speciesLevelFinal-27nov2023.csv)
+    a. Output: [globi_speciesLevelFinal-12Aug2024_revision2.csv](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/modeling_data/globi_speciesLevelFinal-12Aug2024_revision2.csv)
    
-11. Run analyses using [scripts/main_analyses.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/main%20analyses.R)
+11. Update datasets with taxon names to match Henriquez Piskulich bee phylogeny [scripts/make bee phylogeny_Henriquez Piskulich.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/bee_name_updates_Henriquez_Piskulich.R)
 
-12. Run analysis to predict specialist host plants using [scripts/predict specialist hosts.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/predict%20specialist%20hosts.R)
+12. Run analyses using [scripts/main_analyses.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/main%20analyses.R)
 
-13. Run code to look at how often specialist bees visit their host plants using [scripts/specialists-nonhosts.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/specialists-nonhosts.R)
+13. Run analysis to predict specialist host plants using [scripts/predict specialist hosts.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/predict%20specialist%20hosts.R)
+
+14. Run code to look at how often specialist bees visit their host plants using [scripts/specialists-nonhosts.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/specialists-nonhosts.R)
 ## Defintions of column names in *globi_speciesLevelFinal-27nov2023.csv*
 
 | Column Name  | Defintion  | 

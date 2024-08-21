@@ -52,6 +52,9 @@ globi_degree_all <- read_csv("final_data/globi_speciesLevelFinal-12Aug2024_revis
 mean(is.na(globi_degree_all$diet_breadth_conservative))*100
 #30.10836
 
+
+
+
 # what is the phylogenetic breakdown of the unknowns
 unknowns <-globi_degree_all  %>% filter(is.na(diet_breadth_conservative))
 na_count <- sum(is.na(unknowns$diet_breadth_conservative))
@@ -101,6 +104,24 @@ globi_degree <- globi_degree %>% select(-phylo_dist_rm)
 globi <- vroom("modeling_data/globi_allNamesUpdated_Henriquez_Piskulich.csv") %>%
   mutate(bee_genus = sub(" .*", "", scientificName)) %>%
   filter(scientificName %in% globi_degree$scientificName)
+
+#how much of the sex data is filled out
+unique(globi$sourceSexName)
+# 1] "unknown"         "f"               "m"              
+# [4] NA                "female"          "male"           
+# [7] "unknown sex"     "male and female" "undetermined"   
+# [10] "u"               "m, f"            "female queen"   
+# [13] "female (worker)" "female (queen)"  "worker"         
+# [16] "queen"           "femlae"          "gyne"           
+# [19] "male paratype"   "female holo"  
+
+filtered_glob_sex <- globi %>%
+  filter(!sourceSexName %in% c("unknown", NA, "unknown sex", "u", "undetermined"))
+
+count(filtered_glob_sex)/count(globi)*100
+#58.26882
+
+
 
 
 #####

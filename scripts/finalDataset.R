@@ -9,6 +9,9 @@ geo = read_csv('modeling_data/chesshire2023_beeArea11april2023_revision.csv')
 (diet_breadth_russell <- read_excel("modeling_data/specialistsGeneralists_needRefs 11-27-2023.xlsx") %>%
   mutate(scientificName =sub("_", " ", scientificName)))
 
+diet_breadth_russell_all <- read_csv("modeling_data/revision-specialistsGeneralists_needRefs 11-27-2023.csv")
+
+
 # Perform multiple generic replacements
 replace_species <- function(x) {
   x <- gsub("Pseudopanurgus", "Protandrena", x)
@@ -20,7 +23,7 @@ replace_species <- function(x) {
   return(x) }
   
 #update Russell dataframe to match Henriquez_Piskulich
-diet_breadth_russell <- diet_breadth_russell %>%
+diet_breadth_russell_all <- diet_breadth_russell_all %>%
   mutate_all(~ replace_species(.))
 
 #update Russell dataframe to match Henriquez_Piskulich
@@ -33,7 +36,8 @@ plant_phy <- plant_phy %>%
 (diet_breadth_fowler2 <- read_csv('modeling_data/bee_diet_breadth-28june2023.csv') %>%
   mutate(scientificName = ifelse(is.na(scientificName), old_bee_name, scientificName)) )
 
-#update Russell dataframe to match Henriquez_Piskulich
+
+#update Fowler dataframe to match Henriquez_Piskulich
 diet_breadth_fowler2 <- diet_breadth_fowler2 %>%
   mutate_all(~ replace_species(.))
 
@@ -112,6 +116,7 @@ actually_generalists_df <- read_csv("modeling_data/actuallyGeneralists_changeFow
 actually_generalists <- actually_generalists_df %>%
   mutate_all(~ replace_species(.))
 
+
 # add cuckoo bees to jarrod fowler data and remove bees that are generalists in 
 # russell dataset
 diet_breadth_fowler_cuckoo <- diet_breadth_fowler %>% mutate(ref = 'fowler') %>%
@@ -146,7 +151,57 @@ diet_breadth_conservative_df %>% filter(scientificName %in% dupes)
 unique(diet_breadth_conservative_df$diet_breadth)
 diet_breadth_conservative_df %>% filter(scientificName=='Biastes cressoni')
 
+#compare to see if these names were used in the final dataset
+final_dataset <- read.csv("final_data/globi_speciesLevelFinal-12Aug2024_revision2_genera_removed.csv")
+specialists_only <- final_dataset %>% 
+  filter(diet_breadth == "specialist")
 
+#number in fowler dataset
+nrow(diet_breadth_fowler2)
+#1072
+
+#number in russel dataset
+nrow(diet_breadth_russell_all) + nrow(diet_breadth_fowler2)
+#1493
+
+#number of replacements by russell
+nrow(actually_generalists)
+#58
+
+#final list of names
+final_names_list <- read.csv("final_data/AppendixS2_5Dec2023.csv")
+nrow(final_names_list)
+#1292
+
+#how many duplicates
+(nrow(diet_breadth_russell_all) + nrow(diet_breadth_fowler2)) - nrow(final_names_list)
+
+#number of names in both lists
+
+
+
+#number of specialsts replaced by generalists
+replaced_names <- actually_generalists %>% 
+  filter(!scientificName %in% specialists_only)
+
+
+#lists of just names to compare
+russel_list_names <- diet_breadth_russell_all$scientificName
+fowler_list_names <- diet_breadth_fowler2$scientificName
+
+  # Find common names
+  common_names <- intersect(fowler_list_names, russel_list_names)
+  
+  # Find names unique to list1
+  unique_to_list1 <- setdiff(fowler_list_names, russel_list_names)
+  
+  # Find names unique to list2
+  unique_to_list2 <- setdiff(list2, list1)
+  
+
+#get russel list and compare to final data
+replaced_names <- actually_generalists %>% 
+  filter(!scientificName %in% specialists_only)
 
 #plant_phy has all the bees in globi
 #combine with bee_phy and geo

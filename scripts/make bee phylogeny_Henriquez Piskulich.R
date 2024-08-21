@@ -75,6 +75,8 @@ branch_lengths <- trimmed_tree$edge.length
 #check if ultrametric
 is.ultrametric(trimmed_tree)
 
+#mytree_edited <- read.tree('final_data/modified_tree_Henriquez_Piskulich.nwk')
+#plot.phylo(mytree_edited, cex = .5, main="Henriquez Piskulich et. al")
 
 #plot and write new tree
 #plot.phylo(calculatedTree, cex = .5, main="Henriquez Piskulich et. al")

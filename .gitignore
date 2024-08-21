@@ -4,3 +4,10 @@
 .Ruserdata
 .DS_Store
 specialist-manuscript-response/
+.Rapp.history
+archive/
+specialist-manuscript-response-backup/
+pdfs/
+figures/
+oldNewFileComparison.R
+large_data_files/

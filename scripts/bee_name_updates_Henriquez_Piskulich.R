@@ -10,10 +10,6 @@ library(tidyverse)
 
 globi_allNamesUpdated <- read_csv('modeling_data/globi_allNamesUpdated_Henriquez_Piskulich.csv')
 
-russell_formatted <- read_csv("final_data/other_data_files/russell_formatted-30nov2023.csv")
-
-fowler_formatted <- read_csv("final_data/other_data_files/fowler_formatted-30nov2023.csv")
-
 
 # Perform multiple generic replacements
 replace_species <- function(x) {
@@ -39,11 +35,6 @@ russell_formatted <- russell_formatted %>%
   mutate_all(~ replace_species(.))
 
 
-
 #write updated dataframe
 write_csv(globi_allNamesUpdated,'modeling_data/globi_allNamesUpdated_Henriquez_Piskulich.csv')
-
-write_csv(fowler_formatted,'modeling_data/fowler_formatted-15Aug2024.csv')
-
-write_csv(russell_formatted,'modeling_data/russell_formatted-15Aug2024.csv')
 

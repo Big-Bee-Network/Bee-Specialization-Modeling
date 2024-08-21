@@ -4,70 +4,88 @@ This repository contains data and code for the manuscript *Pollen specialist bee
 
 ## Abstract
 
-An animal’s diet breadth is a central aspect of its life history. Yet information about which species have a narrow dietary breadth (specialists) and which have comparatively broad dietary breadths (generalists) is missing for many taxa and regions. One possible way to address this gap is to leverage interaction data found on museum specimens and published in the literature. Here, we use bees as our focal taxon to see if we can predict dietary specialization and generalization using machine learning models and interaction data, along with a genus-level bee phylogeny, and geographic and phenological data of 682 bee species that are native to the United States. To assess whether our models can predict the diet breadths of bee species in different regions or for different taxa, we used spatial and phylogenetic blocking, in which models are cross validated on data that are spatially or phylogenetically independent of the data used to train them. We found that specialist bee species mostly visit their host plants, and that they can be predicted with high accuracy (mean 92% accuracy). Overall model performance was high (mean AUC = 0.84), and our models did a moderate job of predicting generalist bee species, the minority class in our dataset (mean 62% accuracy). Models tested on spatially and phylogenetically blocked data had comparable performance to models tested on randomly blocked data. Our results suggest that it is possible to predict specialist bee species in regions and for taxonomic groups where they are unknown, but may be more challenging to predict generalists, and depends on the class imbalance of the dataset. Researchers looking to identify pollen specialist and generalist species can generate candidate lists of these species by training models on bees from nearby regions or closely related taxa. This type of modeling approach can then enable more targeted data collection.
+An animal’s diet breadth is a central aspect of its life history. Yet the factors driving which species have narrow dietary breadths (specialists) and which have broad dietary breadths (generalists) remain poorly understood. Studying diet breadth in herbivorous insects is especially challenging as comprehensive datasets on plant hosts are missing for many taxa and regions. Leveraging interaction data from museum specimens and published literature can help address this gap. Here, we focus on bees to predict pollen diet breadth using machine learning models, supplemented by a bee phylogeny and occurrence data for 682 bee species native to the United States. We found that, on average, 72.9% of the visits made by pollen specialist bees were to their host plants, and that specialist bees can be predicted with high accuracy (mean 94%). Our models predicted generalist bee species, which made up a minority of the species in our dataset, with lower accuracy (mean 70%). Models tested on spatially and phylogenetically blocked data reveal that the most informative predictors of diet breadth are plant phylogenetic diversity, bee species' geographic range, and regional abundance. These results suggest we can predict specialist bee species in regions and for taxonomic groups where diet breadth is unknown, but predicting generalists may be more challenging. Additionally, we found that male bees tend to visit the same species females use as pollen hosts. Overall, our findings align with prior research, indicating that range size is predictive of diet breadth and specialist bees mostly visit their host plants. 
 
 ## Description of data 
+
+
 In [final_data](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/tree/master/final_data)
 | File Name  | Description  | 
 | :------------ |:---------------| 
-| AppendixS2_5Dec2023.csv      | List of USA bee species in GloBI dataset, their diet breadth classifications and references. | 
-| globi_speciesLevelFinal-27nov2023.csv     | Species-level data used to predict specialist and generalist bee species with random forest model.        |   
-| fowler_formatted-30nov2023.csv | List of bee species in our dataset and their pollen host records from Jarrod Fowler's dataset. Used to assess how often specialist bees visit their host plants.        | 
-| russell_formatted-30nov2023.csv | List of bee species in the GloBI dataset and their pollen host records from Avery's Russell's dataset. Used to assess how often specialist bees visit their host plants.        | 
-| globi_allNamesUpdated.csv | GloBI dataset with interaction records of bee species from the contiguous United States. Both plant and bee names are updated to the currently accepted species name.  | 
+| AppendixS2_20Aug2024-revision.csv | List of USA bee species in GloBI dataset, their diet breadth classifications and references.| 
+| globi_speciesLevelFinal-12Aug2024_revision2_genera_removed.csv | Species-level data used to predict specialist and generalist bee species with random forest model.|   
+| fowler_formatted-15Aug2024.csv | List of bee species in our dataset and their pollen host records from Jarrod Fowler's dataset. Used to assess how often specialist bees visit their host plants.| 
+| russell_formatted-15Aug2024.csv | List of bee species in the GloBI dataset and their pollen host records from Avery's Russell's dataset. Used to assess how often specialist bees visit their host plants.| 
+| sources_table28nov2023_revision.csv | Sources of bee interaction data found in GloBI visitation dataset|
+
+In Large data files stored on [Zenodo](https://doi.org/10.5281/zenodo.8347145)
+| File Name  | Description  | 
+| :------------ |:---------------| 
+| globi_allNamesUpdated.csv.zip | GloBI dataset with interaction records of bee species from the contiguous United States. Both plant and bee names are updated to the currently accepted species name.|
+| globi_allNamesUpdated_Henriquez_Piskulich.csv.zip | GloBI dataset with interaction records of bee species from the contiguous United States. Both plant and bee names are updated to the currently accepted species names with generic changes in bees to match the phylogeny we used in the analysis.|
+| globi_speciesLevelFinal-12Aug2024_revision2.csv.zip | Species-level data used to predict specialist and generalist bee species with random forest model with additional genera that were not found in the GloBI visitation dataset.|
 
 
 ## General workflow for running the analyses:
 
 1. Download full GloBI interaction dataset from [Zenodo](https://doi.org/10.5281/zenodo.7348355).
-2. Filter the dataset to just include bee data using [scripts/format_bee_data.sh](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/format_bee_data.sh)
+2. Filter the dataset to just include bee data using scripts/format_bee_data.sh
 
-   a. Output: *all_bee_data.tsv*
+   a. Output: *all_bee_data.tsv* (not included in archive)
    
-3. Reformat the data using [modeling_data/GLOBI_bee_update_clean.Rmd](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/modeling_data/GLOBI_bee_update_clean.Rmd)
+3. Reformat the data using scripts/GLOBI_bee_update_clean.Rmd
 
-   a. Output: *interactions-14dec2022.csv*
+   a. Output: *interactions-14dec2022.csv* (not included in archive)
 
-4. Get list of USA native bee species and calculate extent of occurence using [scripts/Chesshire2023-beeArea.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/Chesshire2023-beeArea.R)
+4. Get list of USA native bee species and calculate extent of occurence using scripts/Chesshire2023-beeArea.R
 
-   a. Output: *Chesshire2023_nameAlignment.csv*
+   a. Output: *modeling_data/Chesshire2023_nameAlignment.csv*
    
-   b. Output: *chesshire2023_beeArea-11april2023.csv*
+   b. Output: *modeling_data/chesshire2023_beeArea-11april2023.csv*
 
-5. Update *Chesshire2023_nameAlignment.csv* to include information about whether name alignment was informed by geography using [scripts/name-alignment-chesshire.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/name-alignment-chesshire.R)
+5. Update *Chesshire2023_nameAlignment.csv* to include information about whether name alignment was informed by geography using scripts/name-alignment-chesshire.R
 
-   a. Output: *Chesshire2023_nameAlignment-geoUpdate.csv*
+   a. Output: *modeling_data/Chesshire2023_nameAlignment-geoUpdate.csv*
    
-6. Update bee names and filter to just be native US bees using [scripts/update bee names.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/update%20bee%20names.R)
+6. Update bee names and filter to just be native US bees using scripts/update bee names.R
 
-   a. Output: *globi_american_native_bees_7march2023.csv*
+   a. Output: *modeling_data/large_data_files/globi_american_native_bees_7march2023.csv.zip*
    
-7. Make bee phylogeny using [scirpts/make bee phylogeny.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/make%20bee%20phylogeny.R)
+7. Make bee phylogeny using scirpts/make bee phylogeny_Henriquez Piskulich.R
 
-   a. Output: *bee_phylogenetic_data.csv*
+   a. Output: *modeling_data/bee_phylogenetic_data_Henriquez_Piskulich_tree.csv*
+   
+   b. Output: *modeling_data/modified_tree_Henriquez_Piskulich.nwk*
   
-8. Update plant names and make plant phylogeny using [scripts/make plant phylogeny.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/make%20plant%20phylogeny.R)
+8. Update plant names and make plant phylogeny using scripts/make plant phylogeny.R
 
-   a. get plant families from WFO, using [scripts/update plant names.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/update%20plant%20names.R)
+   a. get plant families from WFO, using scripts/update plant names.R
    
-   b. Output: *globi_allNamesUpdated.csv*
+   b. Output: *modeling_data/large_data_files/globi_allNamesUpdated.csv*
    
-   c. Output: *globi_phyloDiv.csv*
+   c. Output: *modeling_data/globi_phyloDiv.csv*
    
-9. Format and update name of list of specialist bees using [scripts/format_fowler_hosts.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/format_fowler_hosts.R) and [scripts/format_russell_hosts.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/format%20russell%20hosts.R)
+9. Format and update name of list of specialist bees using scripts/format_fowler_hosts.R and scripts/format_russell_hosts.R
+	
+	a. Output: modeling_data/russell_formatted-30nov2023.csv
+	
+	b. Output: modeling_data/fowler_formatted-30nov2023.csv
+	
+10. Update datasets with taxon names in GloBI to match Henriquez Piskulich bee phylogeny scripts/make bee phylogeny_Henriquez Piskulich.R
+    
+	a. Output: *globi_allNamesUpdated_Henriquez_Piskulich.csv*
 
-10. Make final dataset using [scripts/finalDataset.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/finalDataset.R)
+11. Make final dataset using scripts/finalDataset.R
 
-    a. Output: [globi_speciesLevelFinal-12Aug2024_revision2.csv](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/modeling_data/globi_speciesLevelFinal-12Aug2024_revision2.csv)
-   
-11. Update datasets with taxon names to match Henriquez Piskulich bee phylogeny [scripts/make bee phylogeny_Henriquez Piskulich.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/bee_name_updates_Henriquez_Piskulich.R)
+    a. Output: modeling_data/large_data_files/globi_speciesLevelFinal-12Aug2024_revision2.csv.zip
 
-12. Run analyses using [scripts/main_analyses.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/main%20analyses.R)
+12. Run analyses using scripts/main_analyses.R
 
-13. Run analysis to predict specialist host plants using [scripts/predict specialist hosts.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/predict%20specialist%20hosts.R)
+13. Run analysis to predict specialist host plants using scripts/predict specialist hosts.R
 
-14. Run code to look at how often specialist bees visit their host plants using [scripts/specialists-nonhosts.R](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/blob/master/scripts/specialists-nonhosts.R)
-## Defintions of column names in *globi_speciesLevelFinal-27nov2023.csv*
+14. Run code to look at how often specialist bees visit their host plants using scripts/specialists-nonhosts.R
+
+## Defintions of column names in *globi_speciesLevelFinal-12Aug2024_revision2.csv*
 
 | Column Name  | Defintion  | 
 | :------------ |:---------------| 

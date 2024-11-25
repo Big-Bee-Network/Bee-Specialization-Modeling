@@ -1,5 +1,5 @@
 # Pollen specialist bee species are accurately predicted from visitation, occurrence and phylogenetic data
-This repository contains data and code for the manuscript *Pollen specialist bee species are accurately predicted from visitation, occurrence and phylogenetic data* currently under review in _Oecologia_.
+This repository contains data and code for the manuscript **Pollen specialist bee species are accurately predicted from visitation, occurrence and phylogenetic data** currently under review in _Oecologia_.
 
 Colleen Smith<sup>1</sup>, Nick Bachelder<sup>1</sup>, Avery L. Russell<sup>2</sup>, Vanessa Morales<sup>2</sup>, Abilene R. Mosher<sup>2</sup>, Katja C. Seltmann<sup>1</sup>
 

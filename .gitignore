@@ -12,3 +12,5 @@ figures/
 oldNewFileComparison.R
 large_data_files/
 figures.zip
+submission-login.txt
+*.zip

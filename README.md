@@ -1,13 +1,18 @@
 # Predicting specialist and generalist bee species
 This repository contains data and code for the manuscript *Pollen specialist bee species are accurately predicted from visitation, occurrence and phylogenetic data*.
 
+Colleen SmithX^2^*, Nick Bachelder1, Avery L. Russell2, Vanessa Morales2, Abilene R. Mosher2, Katja C. Seltmann1
+
+	X^2^Cheadle Center for Biodiversity and Ecological Restoration, University of California, Santa Barbara, Harder South Building 578, Santa Barbara, CA 93106, U.S.A.
+	X^2^Department of Biology, Missouri State University, 910 S John Q Hammons Parkway, Temple Hall, Springfield, MO 65897
+
+** This manuscript is currently under review in _Ocologia_
 
 ## Abstract
 
 An animal’s diet breadth is a central aspect of its life history. Yet the factors driving which species have narrow dietary breadths (specialists) and which have broad dietary breadths (generalists) remain poorly understood. Studying diet breadth in herbivorous insects is especially challenging as comprehensive datasets on plant hosts are missing for many taxa and regions. Leveraging interaction data from museum specimens and published literature can help address this gap. Here, we focus on bees to predict pollen diet breadth using machine learning models, supplemented by a bee phylogeny and occurrence data for 682 bee species native to the United States. We found that, on average, 72.9% of the visits made by pollen specialist bees were to their host plants, and that specialist bees can be predicted with high accuracy (mean 94%). Our models predicted generalist bee species, which made up a minority of the species in our dataset, with lower accuracy (mean 70%). Models tested on spatially and phylogenetically blocked data reveal that the most informative predictors of diet breadth are plant phylogenetic diversity, bee species' geographic range, and regional abundance. These results suggest we can predict specialist bee species in regions and for taxonomic groups where diet breadth is unknown, but predicting generalists may be more challenging. Additionally, we found that male bees tend to visit the same species females use as pollen hosts. Overall, our findings align with prior research, indicating that range size is predictive of diet breadth and specialist bees mostly visit their host plants. 
 
 ## Description of data 
-
 
 In [final_data](https://github.com/Big-Bee-Network/Bee-Specialization-Modeling/tree/master/final_data)
 | File Name  | Description  | 

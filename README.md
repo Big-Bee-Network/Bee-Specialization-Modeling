@@ -1,12 +1,11 @@
-# Predicting specialist and generalist bee species
-This repository contains data and code for the manuscript *Pollen specialist bee species are accurately predicted from visitation, occurrence and phylogenetic data*.
+# Pollen specialist bee species are accurately predicted from visitation, occurrence and phylogenetic data
+This repository contains data and code for the manuscript *Pollen specialist bee species are accurately predicted from visitation, occurrence and phylogenetic data* currently under review in _Oecologia_.
 
 Colleen Smith<sup>1</sup>, Nick Bachelder<sup>1</sup>, Avery L. Russell<sup>2</sup>, Vanessa Morales<sup>2</sup>, Abilene R. Mosher<sup>2</sup>, Katja C. Seltmann<sup>1</sup>
 
 <sup>1</sup>Cheadle Center for Biodiversity and Ecological Restoration, University of California, Santa Barbara, Harder South Building 578, Santa Barbara, CA 93106, U.S.A.
 <sup>2</sup>Department of Biology, Missouri State University, 910 S John Q Hammons Parkway, Temple Hall, Springfield, MO 65897
 
-** This manuscript is currently under review in _Ocologia_
 
 ## Abstract
 

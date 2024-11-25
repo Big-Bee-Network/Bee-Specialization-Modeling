@@ -5,7 +5,7 @@ Colleen Smith<sup>1</sup>, Nick Bachelder<sup>1</sup>, Avery L. Russell<sup>2</s
 <sup>2</sup>Department of Biology, Missouri State University, 910 S John Q Hammons Parkway, Temple Hall, Springfield, MO 65897
 
 
-This repository contains data and code for the manuscript **Pollen specialist bee species are accurately predicted from visitation, occurrence and phylogenetic data** currently under review in _Oecologia_. All files and figures can be found at (https://zenodo.org/records/13357492)[https://zenodo.org/records/13357492]
+This repository contains data and code for the manuscript **Pollen specialist bee species are accurately predicted from visitation, occurrence and phylogenetic data** currently under review in _Oecologia_. All files and figures can be found at [https://zenodo.org/records/13357492](https://zenodo.org/records/13357492)
 
 
 ## Abstract
